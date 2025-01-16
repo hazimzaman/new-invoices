@@ -4,12 +4,7 @@ export interface Invoice {
   date: string;
   created_at: string;
   total_amount: number;
-  client: {
-    name: string;
-    company_name: string;
-    address: string;
-    vat?: string;
-  };
+  client_id: string;
   items: Array<{
     name: string;
     description: string;
@@ -17,4 +12,12 @@ export interface Invoice {
     currency: string;
     quantity?: number;
   }>;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  company_name: string;
+  address: string;
+  vat?: string;
 } 

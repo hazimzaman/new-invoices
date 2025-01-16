@@ -1,138 +1,324 @@
 import React from 'react';
-import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
-import type { Invoice } from '../types/invoice';
+import { Page, Text, View, Document, StyleSheet, Image, Font } from '@react-pdf/renderer';
+import type { InvoiceWithClient } from '../types/invoice';
 import type { Settings } from '../types/settings';
 
-// You'll need to import your images and convert them to base64 or host them
 import logo from './primo-logo.png';
 import bgImage from './Frame-7.png';
 
-interface Props {
-  invoice: Invoice;
+import montserratRegular from './Montserrat-Regular.ttf';
+import montserratBold from './Montserrat-Bold.ttf';
+import openSansRegular from './OpenSans-Regular.ttf';
+import openSansBold from './OpenSans-Bold.ttf';
+
+interface InvoicePDFProps {
+  invoice: InvoiceWithClient;
   settings: Settings;
 }
 
 
+Font.register({
+  family: 'Montserrat',
+  fonts: [
+    {
+      src: montserratRegular,
+      fontWeight: 'normal',
+    },
+    {
+      src: montserratBold,
+      fontWeight: 'bold',
+    }
+  ]
+});
+
+Font.register({
+  family: 'OpenSans',
+  fonts: [
+    {
+      src: openSansRegular,
+      fontWeight: 'normal',
+    },
+    {
+      src: openSansBold,
+      fontWeight: 'bold',
+    }
+  ]
+});
+
 const styles = StyleSheet.create({
-    page: { padding: 30, fontSize: 12, fontFamily: 'Helvetica' },
-    header: { display: 'flex', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-    companyInfo: { textAlign: 'right' },
-    companyLogo: { height: 50, width: 50, marginBottom: 5 },
-    invoiceTitle: { fontSize: 24, fontWeight: 'bold' },
-    invoiceDetails: { marginBottom: 20, position: 'relative' },
-    backgroundImage: { 
-      position: 'absolute', 
-      top: 0, 
-      left: 0, 
-      height: 150, 
-      width: 150, 
-      opacity: 0.1,
-    },
-    detailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
-    table: { 
-      display: 'table', 
-      width: '100%', 
-      marginVertical: 20, 
-      borderWidth: 0.5,  
-      borderColor: '#ddd', 
-    },
-    tableRow: { 
-      flexDirection: 'row',
-      borderBottomWidth: 0.5, 
-      borderColor: '#ddd', 
-    },
-    tableCellHeader: { 
-      flex: 1, 
-      borderBottomWidth: 1, 
-      borderColor: '#ddd', 
-      fontWeight: 'bold', 
-      padding: 5 
-    },
-    tableCell: { 
-      flex: 1, 
-      padding: 5,
-      borderBottomWidth: 0.5, 
-      borderColor: '#ddd',  
-    },
-    totalSection: { marginTop: 20, textAlign: 'right' },
-    footer: { marginTop: 40, textAlign: 'center', fontSize: 10 },
-  });
-  
-  export const InvoicePDF: React.FC<Props> = ({ invoice, settings }) => (
+  page: {
+    fontFamily: 'OpenSans',
+    padding: '40 40 20 40',
+    fontSize: 10.5,
+    position: 'relative',
+  },
+  invoiceContainer: {
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '100%',
+    gap: 25,
+  },
+  blobWrapper: {
+    position: 'absolute',
+    width: 200,
+    height: 503,
+    left: -100,
+    zIndex: -1,
+    opacity: 0.12,
+    top: 80,
+  },
+  header: {
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  invoiceTitle: {
+    fontSize: 48.6,
+    fontFamily: 'Montserrat',
+    fontWeight: 400,
+    letterSpacing: 2,
+    marginTop: 30,
+    alignSelf: 'center',
+  },
+  companyInfo: {
+    textAlign: 'right',
+    alignItems: 'flex-end',
+    marginBottom:15,
+  },
+  companyLogo: {
+    width: 64,
+    height: 64,
+    marginBottom: 8,
+    marginLeft: 'auto',
+  },
+  companyName: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    fontFamily: 'Montserrat',
+    marginBottom: 4,
+  },
+  companyDetail: {
+    marginBottom: 2,
+  },
+  contactName: {
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  wise: {
+    marginTop: 4,
+  },
+  invoiceDetails: {
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    gap: 10,
+    width:  'auto'
+  },
+  leftDetails: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    rowGap: 2,
+    transform: 'translateY(-50px)',
+  },
+  detailRow: {
+    display: 'flex',
+    flexDirection: 'row',
+    marginBottom: 12,
+    alignItems: 'center',
+    columnGap: 10
+  },
+  detailLabel: {
+    fontWeight: 'bold',
+    marginRight: 10,
+    minWidth: 70,
+    display: 'inline-block',
+  },
+  billTo: {
+    display: 'flex',
+    flexDirection: 'column',
+    rowGap: 2,
+  },
+  table: {
+    width: '100%',
+    marginTop: 0,
+    marginBottom: 0,
+    borderWidth: 1,
+    transform: 'translateY(-50px)',
+    borderColor: '#eee',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+  },
+  tableHeader: {
+    backgroundColor: '#fafafa',
+    borderBottomWidth: 2,
+    borderBottomColor: '#eee',
+  },
+  tableCell: {
+    flex: 1,
+    fontSize: 10,
+  },
+  tableCell2: {
+    flex: 3,
+    fontSize: 10,
+  },
+  tableCellAmount: {
+    flex: 1,
+    textAlign: 'right',
+    fontSize: 10,
+  },
+  totalSection: {
+    marginTop: 0,
+    textAlign: 'right',
+    paddingRight: 8,
+    transform: 'translateY(-50px)',
+  },
+  totalLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  totalAmount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  footer: {
+    marginTop: 'auto',
+    fontSize: 9,
+    color: '#666',
+    textAlign: 'center',
+  },
+  backgroundImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    opacity: 0.03,
+  },
+  dateSection: {
+    position: 'absolute',
+    top: 40,
+    right: 60,
+    fontSize: 10,
+    color: '#666',
+  },
+  clientCompanyName: {
+    fontWeight: 'bold',
+  },
+  wiseLabel: {
+    fontWeight: 'bold',
+  },
+  itemName: {
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+});
+
+const calculateTotal = (items: any[]) => {
+  return items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+};
+
+export const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, settings }) => {
+  const formatCurrency = (amount: number | undefined) => {
+    if (amount === undefined || isNaN(amount)) return '0';
+    return amount.toString();
+  };
+
+  return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Header Section */}
-        <View style={styles.header}>
-          <Text style={styles.invoiceTitle}>INVOICE</Text>
-          <View style={styles.companyInfo}>
-            {/* <Image style={styles.companyLogo} src={logo} /> */}
-            <Text>{settings?.company_name || ''}</Text>
-            <Text>{settings?.name || ''}</Text>
-            <Text>{settings?.phone || ''}</Text>
-            <Text>{settings?.email || ''}</Text>
-            {settings?.wise_email && <Text>WISE: {settings.wise_email}</Text>}
+        <View style={styles.invoiceContainer}>
+          <View style={styles.blobWrapper}>
+            <Image src={bgImage} />
           </View>
-        </View>
-  
-        {/* Invoice Details Section */}
-        <View style={styles.invoiceDetails}>
-          <View style={styles.detailRow}>
-            <Text>Invoice No:</Text>
-            <Text>{invoice?.invoice_number || ''}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text>Bill to:</Text>
-            <Text>{invoice?.client?.company_name || invoice?.client?.name || ''}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text>Address:</Text>
-            <Text>{invoice?.client?.address || ''}</Text>
-          </View>
-          {invoice?.client?.vat && (
-            <View style={styles.detailRow}>
-              <Text>VAT:</Text>
-              <Text>{invoice.client.vat}</Text>
+          
+          <View style={styles.header}>
+            <Text style={styles.invoiceTitle}>INVOICE</Text>
+            <View style={styles.companyInfo}>
+              <Image style={styles.companyLogo} src={logo} />
+              <Text style={styles.companyName}>{settings.business_name}</Text>
+              <Text style={styles.contactName}>{settings.contact_name}</Text>
+              <Text style={styles.companyDetail}>{settings.contact_phone}</Text>
+              <Text style={styles.companyDetail}>{settings.business_address}</Text>
+              {settings.wise_email && (
+                <Text style={styles.wise}>
+                  <Text style={styles.wiseLabel}>WISE: </Text>
+                  {settings.wise_email}
+                </Text>
+              )}
             </View>
-          )}
-          <View style={styles.detailRow}>
-            <Text>Date:</Text>
-            <Text>{invoice?.created_at ? new Date(invoice.created_at).toLocaleDateString() : ''}</Text>
           </View>
-        </View>
-  
-        {/* Table Section */}
-        <View style={styles.table}>
-          <View style={styles.tableRow}>
-            <Text style={[styles.tableCellHeader, { flex: 1 }]}>#</Text>
-            <Text style={[styles.tableCellHeader, { flex: 3 }]}>Description</Text>
-            <Text style={[styles.tableCellHeader, { flex: 2 }]}>Price</Text>
-            <Text style={[styles.tableCellHeader, { flex: 2 }]}>Amount</Text>
-          </View>
-          {(invoice?.items || []).map((item, index) => (
-            <View style={styles.tableRow} key={index}>
-              <Text style={[styles.tableCell, { flex: 1 }]}>{index + 1}</Text>
-              <Text style={[styles.tableCell, { flex: 3 }]}>{item?.name || ''}</Text>
-              <Text style={[styles.tableCell, { flex: 2 }]}>
-                {item?.currency || '$'} {(item?.price || 0).toFixed(2)}
-              </Text>
-              <Text style={[styles.tableCell, { flex: 2 }]}>
-                {item?.currency || '$'} {((item?.quantity || 1) * (item?.price || 0)).toFixed(2)}
-              </Text>
+
+          <View style={styles.invoiceDetails}>
+            <View style={styles.leftDetails}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Invoice No:</Text>
+                <Text>{invoice?.invoice_number}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Bill to:</Text>
+                <View style={styles.billTo}>
+                  <Text style={styles.clientCompanyName}>{invoice?.client?.company_name}</Text>
+                <Text>{invoice?.client?.name}</Text>
+                </View>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Address:</Text>
+                <Text>{invoice?.client?.client_address}</Text>
+              </View>
+              {invoice?.client?.tax_number && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>{invoice?.client?.tax_type}:</Text>
+                  <Text>{invoice?.client?.tax_number}</Text>
+                </View>
+              )}
             </View>
-          ))}
-        </View>
-  
-        {/* Total Section */}
-        <View style={styles.totalSection}>
-          <Text>
-            Total: {invoice?.items?.[0]?.currency || '$'} {(invoice?.total || 0).toFixed(2)}
-          </Text>
-        </View>
-  
-        {/* Footer Section */}
-        <View style={styles.footer}>
-          <Text>If you have any questions, please contact: {settings?.email || ''}</Text>
+          </View>
+
+          <View style={styles.table}>
+            <View style={[styles.tableRow, styles.tableHeader]}>
+              <Text style={styles.tableCell}>#</Text>
+              <Text style={styles.tableCell2}>Item</Text>
+              <Text style={styles.tableCell}>Price</Text>
+              <Text style={styles.tableCellAmount}>Amount</Text>
+            </View>
+            {(invoice?.items || []).map((item, index) => (
+              <View key={index} style={styles.tableRow}>
+                <Text style={styles.tableCell}>{index + 1}.</Text>
+                <Text style={styles.tableCell2}>
+                  <Text style={styles.itemName}>{item?.name}</Text>
+                  {item?.description && (
+                    <Text>{'\n'}{item?.description}</Text>
+                  )}
+                </Text>
+                <Text style={styles.tableCell}>
+                  {invoice?.client?.currency || '$'}{formatCurrency(item?.price)}
+                </Text>
+                <Text style={styles.tableCellAmount}>
+                  {invoice?.client?.currency || '$'}{formatCurrency(item?.price)}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.totalSection}>
+            <Text style={styles.totalLabel}>
+              Total &nbsp; &nbsp;  &nbsp; &nbsp;{invoice?.client?.currency || '$'}{formatCurrency(calculateTotal(invoice?.items || []))}
+            </Text>
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>If you have any questions, please contact: {settings.contact_email}</Text>
+          </View>
         </View>
       </Page>
     </Document>
   );
+};

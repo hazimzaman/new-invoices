@@ -23,6 +23,7 @@ interface BusinessSettings {
   invoice_footer_note: string | null;
   wise_email: string | null;
   logo_url: string | null;
+  invoice_number: number | null;
 }
 
 function Settings() {
@@ -47,7 +48,8 @@ function Settings() {
     invoice_prefix: null,
     invoice_footer_note: null,
     wise_email: null,
-    logo_url: null
+    logo_url: null,
+    invoice_number: null,
   });
 
   useEffect(() => {
@@ -82,12 +84,28 @@ function Settings() {
     }
   };
 
+  const validateInvoiceNumbers = (settings: BusinessSettings) => {
+    const lastNumber = settings.last_invoice_number;
+    const sequence = settings.invoice_number_sequence;
+
+    if (sequence !== null && lastNumber !== null && sequence <= lastNumber) {
+      return 'Invoice number sequence must be greater than the last invoice number';
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.id) return;
 
     try {
       setIsSaving(true);
+
+      const validationError = validateInvoiceNumbers(settings);
+      if (validationError) {
+        alert(validationError);
+        return;
+      }
 
       const { error } = await supabase
         .from('business_settings')
@@ -100,6 +118,7 @@ function Settings() {
 
       if (error) {
         console.error('Error saving settings:', error);
+        alert('Error saving settings. Please try again.');
         return;
       }
 
@@ -107,6 +126,7 @@ function Settings() {
       alert('Settings saved successfully!');
     } catch (error) {
       console.error('Error in handleSubmit:', error);
+      alert('An unexpected error occurred. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -115,6 +135,40 @@ function Settings() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setSettings(prev => ({ ...prev, [name]: value || null }));
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.id) return;
+
+    try {
+      // Upload to Supabase storage
+      const { data, error } = await supabase.storage
+        .from('logos')
+        .upload(`${user.id}/logo.${file.name.split('.').pop()}`, file, {
+          upsert: true
+        });
+
+      if (error) throw error;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('logos')
+        .getPublicUrl(data.path);
+
+      // Update settings with new logo URL
+      const { error: updateError } = await supabase
+        .from('business_settings')
+        .update({ logo_url: publicUrl })
+        .eq('user_id', user.id);
+
+      if (updateError) throw updateError;
+
+      // Update local state
+      setSettings(prev => prev ? { ...prev, logo_url: publicUrl } : null);
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+    }
   };
 
   if (isLoading) {
@@ -151,14 +205,20 @@ function Settings() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Logo URL</label>
+                <label className="block text-sm font-medium text-gray-700">Logo</label>
                 <input
-                  type="url"
-                  name="logo_url"
-                  value={settings.logo_url || ''}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  className="mt-1 block w-full"
                 />
+                {settings?.logo_url && (
+                  <img 
+                    src={settings.logo_url} 
+                    alt="Company Logo" 
+                    className="mt-2 h-16 w-auto"
+                  />
+                )}
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700">Business Address</label>
@@ -328,6 +388,26 @@ function Settings() {
                   placeholder="e.g., INV-"
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Current Invoice Number
+                  <span className="text-sm text-gray-500 ml-1">
+                    (Next invoice will be {((settings.invoice_number || 0) + 1)})
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  name="invoice_number"
+                  value={settings.invoice_number || ''}
+                  onChange={handleChange}
+                  placeholder="e.g., 156"
+                  min="0"
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-sm text-gray-500">
+                  Next invoice will automatically use {(settings.invoice_number || 0) + 1}
+                </p>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700">Invoice Footer Note</label>

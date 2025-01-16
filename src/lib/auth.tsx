@@ -8,6 +8,7 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   loading: boolean;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -17,44 +18,99 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check active sessions and sets the user
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    let mounted = true;
 
-    // Listen for changes on auth state
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    async function initializeAuth() {
+      try {
+        // Check active sessions
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+          if (mounted) {
+            setLoading(false);
+          }
+          return;
+        }
 
-    return () => subscription.unsubscribe();
+        if (mounted) {
+          setUser(session?.user ?? null);
+          setLoading(false);
+        }
+
+        // Listen for changes on auth state
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+          if (mounted) {
+            setUser(session?.user ?? null);
+            setLoading(false);
+          }
+        });
+
+        return () => {
+          mounted = false;
+          subscription.unsubscribe();
+        };
+      } catch (error) {
+        console.error('Error in auth initialization:', error);
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    initializeAuth();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) throw error;
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+    } finally {
+      setLoading(false);
+    }
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    if (error) throw error;
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+      if (error) throw error;
+    } finally {
+      setLoading(false);
+    }
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const value = {
+    user,
+    signIn,
+    signUp,
+    signOut,
+    loading
   };
 
   return (
-    <AuthContext.Provider value={{ user, signIn, signUp, signOut, loading }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

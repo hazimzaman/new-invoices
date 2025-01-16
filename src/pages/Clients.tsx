@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Search, Eye } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Eye, Filter } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { useAuth } from '../lib/auth';
@@ -9,9 +9,24 @@ interface Client {
   name: string;
   company_name: string;
   email: string;
-  phone_number: string;
+  client_address: string;
+  tax_number: string;
+  tax_type: string;
   created_at: string;
   currency: string;
+}
+
+interface FilterState {
+  name: string;
+  company: string;
+  email: string;
+  currency: string;
+  dateRange: {
+    from: string;
+    to: string;
+  };
+  sortBy: 'name' | 'company' | 'date' | 'none';
+  sortOrder: 'asc' | 'desc';
 }
 
 function Clients() {
@@ -26,9 +41,26 @@ function Clients() {
     name: '',
     company_name: '',
     email: '',
+    client_address: '',
+    tax_number: '',
+    tax_type: '',
     phone_number: '',
     currency: '$'
   });
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<FilterState>({
+    name: '',
+    company: '',
+    email: '',
+    currency: '',
+    dateRange: {
+      from: '',
+      to: ''
+    },
+    sortBy: 'none',
+    sortOrder: 'asc'
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -39,7 +71,18 @@ function Clients() {
   async function fetchClients() {
     const { data, error } = await supabase
       .from('clients')
-      .select('*')
+      .select(`
+        id,
+        name,
+        company_name,
+        email,
+        client_address,
+        tax_number,
+        tax_type,
+        created_at,
+        currency
+      `)
+      .eq('user_id', user?.id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -53,37 +96,42 @@ function Clients() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (editingClient) {
-      const { error } = await supabase
-        .from('clients')
-        .update(formData)
-        .eq('id', editingClient.id);
+    try {
+      setIsSubmitting(true);
+      
+      if (editingClient) {
+        const { error } = await supabase
+          .from('clients')
+          .update(formData)
+          .eq('id', editingClient.id);
 
-      if (error) {
-        console.error('Error updating client:', error);
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from('clients')
-        .insert([{ ...formData, user_id: user?.id }]);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('clients')
+          .insert([{ ...formData, user_id: user?.id }]);
 
-      if (error) {
-        console.error('Error creating client:', error);
-        return;
+        if (error) throw error;
       }
+
+      setIsModalOpen(false);
+      setEditingClient(null);
+      setFormData({
+        name: '',
+        company_name: '',
+        email: '',
+        client_address: '',
+        tax_number: '',
+        tax_type: '',
+        phone_number: '',
+        currency: '$'
+      });
+      await fetchClients();
+    } catch (error) {
+      console.error('Error saving client:', error);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsModalOpen(false);
-    setEditingClient(null);
-    setFormData({
-      name: '',
-      company_name: '',
-      email: '',
-      phone_number: '',
-      currency: '$'
-    });
-    fetchClients();
   };
 
   const handleDelete = async (id: string) => {
@@ -102,11 +150,70 @@ function Clients() {
     }
   };
 
-  const filteredClients = clients.filter(client =>
-    client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredClients = clients
+    .filter(client => {
+      const matchesSearch = 
+        client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.email.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesNameFilter = !filters.name || 
+        client.name.toLowerCase().includes(filters.name.toLowerCase());
+      
+      const matchesCompanyFilter = !filters.company || 
+        client.company_name.toLowerCase().includes(filters.company.toLowerCase());
+      
+      const matchesEmailFilter = !filters.email || 
+        client.email.toLowerCase().includes(filters.email.toLowerCase());
+      
+      const matchesCurrencyFilter = !filters.currency || 
+        client.currency === filters.currency;
+      
+      const clientDate = new Date(client.created_at);
+      const matchesDateFilter = 
+        (!filters.dateRange.from || clientDate >= new Date(filters.dateRange.from)) &&
+        (!filters.dateRange.to || clientDate <= new Date(filters.dateRange.to));
+
+      return matchesSearch && 
+             matchesNameFilter && 
+             matchesCompanyFilter && 
+             matchesEmailFilter && 
+             matchesCurrencyFilter && 
+             matchesDateFilter;
+    })
+    .sort((a, b) => {
+      if (filters.sortBy === 'none') return 0;
+      
+      let comparison = 0;
+      switch (filters.sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'company':
+          comparison = a.company_name.localeCompare(b.company_name);
+          break;
+        case 'date':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+      }
+      
+      return filters.sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+  const resetFilters = () => {
+    setFilters({
+      name: '',
+      company: '',
+      email: '',
+      currency: '',
+      dateRange: {
+        from: '',
+        to: ''
+      },
+      sortBy: 'none',
+      sortOrder: 'asc'
+    });
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -121,17 +228,163 @@ function Clients() {
         </button>
       </div>
 
-      <div className="mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search clients..."
-            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="mb-6 space-y-4">
+        <div className="flex gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Search clients..."
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`px-4 py-2 border rounded-lg flex items-center gap-2 ${
+              showFilters ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            Filters
+            {Object.values(filters).some(value => 
+              value !== '' && value !== 'none' && 
+              !(typeof value === 'object' && Object.values(value).every(v => v === ''))
+            ) && (
+              <span className="w-2 h-2 rounded-full bg-blue-600" />
+            )}
+          </button>
         </div>
+
+        {showFilters && (
+          <div className="bg-white rounded-lg shadow p-6 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Filter by Name
+                </label>
+                <input
+                  type="text"
+                  value={filters.name}
+                  onChange={(e) => setFilters({ ...filters, name: e.target.value })}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Filter by name..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Filter by Company
+                </label>
+                <input
+                  type="text"
+                  value={filters.company}
+                  onChange={(e) => setFilters({ ...filters, company: e.target.value })}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Filter by company..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Filter by Email
+                </label>
+                <input
+                  type="text"
+                  value={filters.email}
+                  onChange={(e) => setFilters({ ...filters, email: e.target.value })}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Filter by email..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Filter by Currency
+                </label>
+                <select
+                  value={filters.currency}
+                  onChange={(e) => setFilters({ ...filters, currency: e.target.value })}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+                  <option value="">All Currencies</option>
+                  <option value="$">$ (Dollar)</option>
+                  <option value="€">€ (Euro)</option>
+                  <option value="₹">₹ (Rupee)</option>
+                  <option value="£">£ (Pound)</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Date Range
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={filters.dateRange.from}
+                    onChange={(e) => setFilters({
+                      ...filters,
+                      dateRange: { ...filters.dateRange, from: e.target.value }
+                    })}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  />
+                  <input
+                    type="date"
+                    value={filters.dateRange.to}
+                    onChange={(e) => setFilters({
+                      ...filters,
+                      dateRange: { ...filters.dateRange, to: e.target.value }
+                    })}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Sort By
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={filters.sortBy}
+                    onChange={(e) => setFilters({
+                      ...filters,
+                      sortBy: e.target.value as FilterState['sortBy']
+                    })}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  >
+                    <option value="none">No Sorting</option>
+                    <option value="name">Name</option>
+                    <option value="company">Company</option>
+                    <option value="date">Date Created</option>
+                  </select>
+                  <select
+                    value={filters.sortOrder}
+                    onChange={(e) => setFilters({
+                      ...filters,
+                      sortOrder: e.target.value as 'asc' | 'desc'
+                    })}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  >
+                    <option value="asc">Ascending</option>
+                    <option value="desc">Descending</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={resetFilters}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Reset Filters
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 bg-white rounded-lg shadow overflow-hidden min-h-0">
@@ -174,6 +427,9 @@ function Clients() {
                             name: client.name,
                             company_name: client.company_name,
                             email: client.email,
+                            client_address: client.client_address,
+                            tax_number: client.tax_number,
+                            tax_type: client.tax_type,
                             phone_number: client.phone_number,
                             currency: client.currency
                           });
@@ -226,16 +482,20 @@ function Clients() {
                 <p className="mt-1 text-gray-900">{viewingClient.company_name || '-'}</p>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-500">Address</label>
+                <p className="mt-1 text-gray-900 whitespace-pre-line">
+                  {viewingClient.client_address}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-500">Tax Information</label>
+                <p className="mt-1 text-gray-900">
+                  {viewingClient.tax_type}: {viewingClient.tax_number}
+                </p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-500">Email</label>
-                <p className="mt-1 text-gray-900">{viewingClient.email || '-'}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Phone</label>
-                <p className="mt-1 text-gray-900">{viewingClient.phone_number || '-'}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Currency</label>
-                <p className="mt-1 text-gray-900">{viewingClient.currency}</p>
+                <p className="mt-1 text-gray-900">{viewingClient.email}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-500">Created</label>
@@ -261,6 +521,9 @@ function Clients() {
                     name: viewingClient.name,
                     company_name: viewingClient.company_name,
                     email: viewingClient.email,
+                    client_address: viewingClient.client_address,
+                    tax_number: viewingClient.tax_number,
+                    tax_type: viewingClient.tax_type,
                     phone_number: viewingClient.phone_number,
                     currency: viewingClient.currency
                   });
@@ -283,60 +546,75 @@ function Clients() {
             <h2 className="text-xl font-bold mb-4">
               {editingClient ? 'Edit Client' : 'Add New Client'}
             </h2>
-            <form onSubmit={handleSubmit}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Company Name</label>
-                  <input
-                    type="text"
-                    value={formData.company_name}
-                    onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Phone Number</label>
-                  <input
-                    type="tel"
-                    value={formData.phone_number}
-                    onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Currency</label>
-                  <select
-                    value={formData.currency}
-                    onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  >
-                    <option value="$">$ (Dollar)</option>
-                    <option value="€">€ (Euro)</option>
-                    <option value="₹">₹ (Rupee)</option>
-                    <option value="£">£ (Pound)</option>
-                  </select>
-                </div>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                />
               </div>
-              <div className="mt-6 flex justify-end space-x-3">
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Company Name</label>
+                <input
+                  type="text"
+                  value={formData.company_name}
+                  onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Email</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Address</label>
+                <textarea
+                  rows={3}
+                  value={formData.client_address}
+                  onChange={(e) => setFormData({ ...formData, client_address: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Street Address&#10;City, State/Province&#10;Country, Postal Code"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Tax Type</label>
+                <select
+                  value={formData.tax_type}
+                  onChange={(e) => setFormData({ ...formData, tax_type: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+                  <option value="">Select Tax Type</option>
+                  <option value="VAT">VAT</option>
+                  <option value="SSN">SSN</option>
+                  <option value="EIN">EIN</option>
+                  <option value="TIN">TIN</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Tax Number</label>
+                <input
+                  type="text"
+                  value={formData.tax_number}
+                  onChange={(e) => setFormData({ ...formData, tax_number: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -346,19 +624,23 @@ function Clients() {
                       name: '',
                       company_name: '',
                       email: '',
+                      client_address: '',
+                      tax_number: '',
+                      tax_type: '',
                       phone_number: '',
                       currency: '$'
                     });
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  disabled={isSubmitting}
                 >
-                  {editingClient ? 'Update' : 'Create'}
+                  {isSubmitting ? 'Saving...' : editingClient ? 'Update Client' : 'Create Client'}
                 </button>
               </div>
             </form>

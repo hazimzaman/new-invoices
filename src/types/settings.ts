@@ -1,11 +1,8 @@
 export interface Settings {
-  id: string;
-  user_id: string;
-  company_name: string;
-  name: string;
-  phone: string;
-  email: string;
-  wise_email?: string;
-  created_at: string;
-  // Add any other fields from your business settings table
+  business_name: string;
+  business_address: string;
+  contact_name: string;
+  contact_email: string;
+  contact_phone: string;
+  wise_email: string;
 } 
