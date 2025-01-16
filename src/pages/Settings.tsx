@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, Save } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { toast } from 'react-hot-toast';
 
 interface BusinessSettings {
   id?: string;
@@ -69,16 +70,14 @@ function Settings() {
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (error) {
-        console.error('Error fetching settings:', error);
-        return;
-      }
+      if (error) throw error;
 
       if (data) {
         setSettings(data);
       }
     } catch (error) {
-      console.error('Error in fetchSettings:', error);
+      console.error('Error fetching settings:', error);
+      toast.error('Failed to load settings. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -96,80 +95,176 @@ function Settings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.id) return;
-
-    try {
-      setIsSaving(true);
-
-      const validationError = validateInvoiceNumbers(settings);
-      if (validationError) {
-        alert(validationError);
-        return;
-      }
-
-      const { error } = await supabase
-        .from('business_settings')
-        .upsert({
-          ...settings,
-          user_id: user.id
-        }, {
-          onConflict: 'user_id'
-        });
-
-      if (error) {
-        console.error('Error saving settings:', error);
-        alert('Error saving settings. Please try again.');
-        return;
-      }
-
-      await fetchSettings();
-      alert('Settings saved successfully!');
-    } catch (error) {
-      console.error('Error in handleSubmit:', error);
-      alert('An unexpected error occurred. Please try again.');
-    } finally {
-      setIsSaving(false);
+    if (!user?.id) {
+      toast.error('You must be logged in to save settings');
+      return;
     }
+
+    const savePromise = new Promise(async (resolve, reject) => {
+      try {
+        setIsSaving(true);
+
+        const validationError = validateInvoiceNumbers(settings);
+        if (validationError) {
+          reject(new Error(validationError));
+          return;
+        }
+
+        const { error } = await supabase
+          .from('business_settings')
+          .upsert({
+            ...settings,
+            user_id: user.id
+          }, {
+            onConflict: 'user_id'
+          });
+
+        if (error) throw error;
+
+        await fetchSettings();
+        resolve('Settings saved successfully!');
+      } catch (error) {
+        console.error('Error in handleSubmit:', error);
+        reject(new Error(error instanceof Error ? error.message : 'Failed to save settings'));
+      } finally {
+        setIsSaving(false);
+      }
+    });
+
+    toast.promise(savePromise, {
+      loading: 'Saving settings...',
+      success: (message) => message as string,
+      error: (err) => err.message
+    });
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setSettings(prev => ({ ...prev, [name]: value || null }));
+    setSettings(prev => {
+      if (!prev) return prev;
+      const newValue = value.trim() === '' ? null : value;
+      return { ...prev, [name]: newValue };
+    });
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !user?.id) return;
+    
+    // Check authentication
+    const session = await supabase.auth.getSession();
+    const isAuthenticated = !!session.data.session;
 
-    try {
-      // Upload to Supabase storage
-      const { data, error } = await supabase.storage
-        .from('logos')
-        .upload(`${user.id}/logo.${file.name.split('.').pop()}`, file, {
-          upsert: true
-        });
-
-      if (error) throw error;
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('logos')
-        .getPublicUrl(data.path);
-
-      // Update settings with new logo URL
-      const { error: updateError } = await supabase
-        .from('business_settings')
-        .update({ logo_url: publicUrl })
-        .eq('user_id', user.id);
-
-      if (updateError) throw updateError;
-
-      // Update local state
-      setSettings(prev => prev ? { ...prev, logo_url: publicUrl } : null);
-    } catch (error) {
-      console.error('Error uploading logo:', error);
+    if (!file) {
+      toast.error('Please select a file to upload');
+      return;
     }
+
+    // Check file type
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    if (fileExt !== 'jpg') {
+      toast.error('Only JPG files are allowed');
+      return;
+    }
+
+    const uploadPromise = new Promise(async (resolve, reject) => {
+      try {
+        const timestamp = new Date().getTime();
+        // Use the appropriate folder based on authentication status
+        const folderPrefix = isAuthenticated ? '1peuqw_1' : '1peuqw_1';
+        const fileName = `${folderPrefix}/logo-${timestamp}.jpg`;
+
+        // Upload to Supabase storage
+        const { data, error } = await supabase.storage
+          .from('logos')
+          .upload(fileName, file, {
+            upsert: true,
+            cacheControl: '3600'
+          });
+
+        if (error) {
+          console.error('Upload error:', error);
+          throw error;
+        }
+
+        // Get URL based on authentication status
+        let fileUrl;
+        if (isAuthenticated) {
+          const { data: { signedUrl } } = await supabase.storage
+            .from('logos')
+            .createSignedUrl(data.path, 31536000); // 1 year expiry
+          fileUrl = signedUrl;
+        } else {
+          const { data: { publicUrl } } = supabase.storage
+            .from('logos')
+            .getPublicUrl(data.path);
+          fileUrl = publicUrl;
+        }
+
+        if (!fileUrl) throw new Error('Failed to generate URL');
+
+        // Update settings with new logo URL
+        if (isAuthenticated) {
+          const { error: updateError } = await supabase
+            .from('business_settings')
+            .update({ logo_url: fileUrl })
+            .eq('user_id', session.data.session!.user.id);
+
+          if (updateError) throw updateError;
+        }
+
+        setSettings(prev => ({
+          ...prev,
+          logo_url: fileUrl
+        }));
+
+        // Clean up old file if exists in the appropriate folder
+        if (settings.logo_url) {
+          const oldPath = settings.logo_url.split('/').slice(-2).join('/');
+          await supabase.storage
+            .from('logos')
+            .remove([oldPath]);
+        }
+
+        resolve('Logo uploaded successfully!');
+      } catch (error) {
+        console.error('Error uploading logo:', error);
+        reject(new Error('Failed to upload logo. Please try again.'));
+      }
+    });
+
+    toast.promise(uploadPromise, {
+      loading: 'Uploading logo...',
+      success: (message) => message as string,
+      error: (err) => err.message
+    });
   };
+
+  // Function to refresh signed URLs for authenticated users
+  const refreshSignedUrl = async (path: string) => {
+    const session = await supabase.auth.getSession();
+    if (session.data.session) {
+      const { data: { signedUrl } } = await supabase.storage
+        .from('logos')
+        .createSignedUrl(path, 31536000);
+      return signedUrl;
+    }
+    return null;
+  };
+
+  // Add this to your useEffect to refresh the URL when component mounts
+  useEffect(() => {
+    if (settings.logo_url) {
+      const path = settings.logo_url.split('/').slice(-2).join('/');
+      refreshSignedUrl(path).then(newUrl => {
+        if (newUrl) {
+          setSettings(prev => ({
+            ...prev,
+            logo_url: newUrl
+          }));
+        }
+      });
+    }
+  }, []);
 
   if (isLoading) {
     return (
@@ -205,19 +300,77 @@ function Settings() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Logo</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleLogoUpload}
-                  className="mt-1 block w-full"
-                />
+                <label className="block text-sm font-medium text-gray-700 mb-2">Company Logo</label>
+                <div className="flex flex-col space-y-4">
+                  {settings?.logo_url && (
+                    <div className="flex items-center space-x-4">
+                      <img 
+                        src={settings.logo_url} 
+                        alt="Company Logo" 
+                        className="h-16 w-auto object-contain rounded-lg border border-gray-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSettings(prev => {
+                            if (!prev) return prev;
+                            return { ...prev, logo_url: null };
+                          });
+                          // Also delete from storage if needed
+                          if (user?.id) {
+                            toast.promise(
+                              supabase.storage
+                                .from('logos')
+                                .remove([`${user.id}/logo.${settings.logo_url?.split('.').pop()}`]),
+                              {
+                                loading: 'Removing logo...',
+                                success: 'Logo removed successfully',
+                                error: 'Failed to remove logo'
+                              }
+                            );
+                          }
+                        }}
+                        className="px-3 py-1 text-sm text-red-600 hover:text-red-800 border border-red-200 hover:border-red-300 rounded-md"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-center w-full">
+                    <label className="w-full flex flex-col items-center px-4 py-6 bg-white rounded-lg border-2 border-gray-300 border-dashed cursor-pointer hover:border-blue-500 hover:bg-gray-50">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <svg
+                          className="w-8 h-8 mb-3 text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                          />
+                        </svg>
+                        <p className="mb-2 text-sm text-gray-500">
+                          <span className="font-semibold">Click to upload</span> or drag and drop
+                        </p>
+                        <p className="text-xs text-gray-500">PNG, JPG, GIF up to 5MB</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
                 {settings?.logo_url && (
-                  <img 
-                    src={settings.logo_url} 
-                    alt="Company Logo" 
-                    className="mt-2 h-16 w-auto"
-                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    Current logo shown above. Upload a new one to replace it.
+                  </p>
                 )}
               </div>
               <div className="md:col-span-2">

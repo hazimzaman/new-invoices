@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, Search, Filter, Loader2, Eye, Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { useAuth } from '../lib/auth';
 import { generateInvoicePDF } from '../services/generateInvoicePDF.tsx';
 import type { Settings } from '../types/settings';
+import { toast } from 'react-hot-toast';
 
 interface Client {
   id: string;
@@ -55,7 +56,7 @@ function Invoices() {
   const [items, setItems] = useState<Array<{ name: string; description: string; price: string }>>([
     { name: '', description: '', price: '' }
   ]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
@@ -77,22 +78,71 @@ function Invoices() {
     message: string;
     type: 'success' | 'error' | null;
   }>({ loading: false, message: '', type: null });
+  const [isLoading, setIsLoading] = useState(true);
+  const initialLoadRef = useRef(false);
 
   useEffect(() => {
-    if (user) {
-      Promise.all([
-        fetchInvoices(),
-        fetchClients(),
-        fetchSettings()
-      ]).catch(error => {
+    let mounted = true;
+
+    const initializeData = async () => {
+      if (!user || initialLoadRef.current) return;
+
+      try {
+        setIsLoading(true);
+        await Promise.all([
+          fetchInvoices(),
+          fetchClients(),
+          fetchSettings()
+        ]);
+        initialLoadRef.current = true;
+      } catch (error) {
         console.error('Error in initial data fetch:', error);
-      });
-    }
+        if (mounted) {
+          toast.error('Failed to load initial data');
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initializeData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('invoice-changes')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'invoices',
+          filter: `user_id=eq.${user.id}`
+        }, 
+        () => {
+          fetchInvoices();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   async function fetchInvoices() {
     try {
-      setIsLoading(true);
+      if (!initialLoadRef.current) {
+        setIsRefreshing(true);
+      }
+
       const { data: invoicesData, error: invoicesError } = await supabase
         .from('invoices')
         .select(`
@@ -123,8 +173,9 @@ function Invoices() {
       setInvoices(invoicesWithItems);
     } catch (error) {
       console.error('Error fetching invoices:', error);
+      toast.error('Failed to fetch invoices. Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsRefreshing(false);
     }
   }
 
@@ -139,6 +190,7 @@ function Invoices() {
       setClients(data || []);
     } catch (error) {
       console.error('Error fetching clients:', error);
+      toast.error('Failed to fetch clients. Please try again.');
     }
   }
 
@@ -153,6 +205,7 @@ function Invoices() {
       setSettings(data);
     } catch (error) {
       console.error('Error fetching settings:', error);
+      toast.error('Failed to fetch business settings. Please try again.');
     }
   }
 
@@ -170,14 +223,13 @@ function Invoices() {
     
     try {
       setIsSubmitting(true);
-      setSubmitStatus({
-        loading: true,
-        message: 'Processing...',
-        type: null
-      });
-
+      
       if (!selectedClient || !user?.id || !settings) {
         throw new Error('Please select a client and ensure settings are loaded');
+      }
+
+      if (items.length === 0 || items.some(item => !item.name || !item.price)) {
+        throw new Error('Please add at least one item with name and price');
       }
 
       const nextNumber = (settings.invoice_number || 0) + 1;
@@ -207,6 +259,7 @@ function Invoices() {
 
       if (settingsError) {
         console.error('Error updating invoice number:', settingsError);
+        toast.error('Warning: Invoice number may not have updated correctly');
       }
 
       // Then create all items
@@ -231,28 +284,16 @@ function Invoices() {
         throw itemsError;
       }
 
-      setSubmitStatus({
-        loading: false,
-        message: 'Invoice created successfully!',
-        type: 'success'
-      });
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast.success('Invoice created successfully!');
       setIsModalOpen(false);
       resetForm();
       await Promise.all([
         fetchInvoices(),
-        fetchSettings() // Refresh settings to get the updated invoice number
+        fetchSettings()
       ]);
     } catch (error) {
       console.error('Error in handleSubmit:', error);
-      setSubmitStatus({
-        loading: false,
-        message: error instanceof Error 
-          ? error.message 
-          : 'Error saving invoice. Please try again.',
-        type: 'error'
-      });
+      toast.error(error instanceof Error ? error.message : 'Failed to create invoice. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -263,10 +304,12 @@ function Invoices() {
 
     try {
       // First delete all invoice items
-      await supabase
+      const { error: itemsError } = await supabase
         .from('invoice_items')
         .delete()
         .eq('invoice_id', id);
+
+      if (itemsError) throw itemsError;
 
       // Then delete the invoice
       const { error } = await supabase
@@ -275,9 +318,12 @@ function Invoices() {
         .eq('id', id);
 
       if (error) throw error;
+      
+      toast.success('Invoice deleted successfully');
       await fetchInvoices();
     } catch (error) {
       console.error('Error deleting invoice:', error);
+      toast.error('Failed to delete invoice. Please try again.');
     }
   };
 
@@ -347,8 +393,7 @@ function Invoices() {
   const handleDownloadPDF = async (invoice: Invoice) => {
     try {
       if (!settings) {
-        console.error('Settings not loaded');
-        return;
+        throw new Error('Settings not loaded');
       }
 
       const pdfBlob = await generateInvoicePDF(invoice, settings);
@@ -356,8 +401,7 @@ function Invoices() {
       const link = document.createElement('a');
       link.href = url;
       
-      // Create filename: "Invoice #123 - Client Name"
-      const invoiceNumber = invoice.invoice_number.replace(/^.*?(\d+)$/, '$1'); // Extract just the number
+      const invoiceNumber = invoice.invoice_number.replace(/^.*?(\d+)$/, '$1');
       const clientName = invoice.client?.name || 'Unknown Client';
       const fileName = `Invoice #${invoiceNumber} - ${clientName}.pdf`;
       
@@ -366,36 +410,47 @@ function Invoices() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      
+      toast.success('Invoice PDF downloaded successfully');
     } catch (error) {
       console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF. Please try again.');
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-[400px] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <p className="text-gray-600">Loading invoices...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleManualRefresh = async () => {
+    try {
+      setIsRefreshing(true);
+      await Promise.all([
+        fetchInvoices(),
+        fetchClients(),
+        fetchSettings()
+      ]);
+      toast.success('Data refreshed successfully');
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast.error('Failed to refresh data');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Invoices</h1>
-        <button
-          onClick={() => {
-            setEditingInvoice(null);
-            setIsModalOpen(true);
-          }}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Invoice
-        </button>
+        <div className="flex items-center gap-4">
+          {isRefreshing && (
+            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          )}
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Invoice
+          </button>
+        </div>
       </div>
 
       <div className="mb-6 space-y-4">
@@ -542,48 +597,61 @@ function Invoices() {
         )}
       </div>
 
-      {invoices.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-center py-12">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No invoices found</h3>
-            <p className="text-gray-500 mb-6">Get started by creating your first invoice</p>
-            <button
-              onClick={() => {
-                setEditingInvoice(null);
-                setIsModalOpen(true);
-              }}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center mx-auto"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create First Invoice
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Invoice #
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Client
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Amount
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {isLoading ? (
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Invoice #
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Client
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Amount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
+                  <td colSpan={5} className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center justify-center min-h-[200px]">
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                        <p className="text-gray-600">Loading invoices...</p>
+                      </div>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredInvoices.map((invoice) => (
+              ) : invoices.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-center py-12">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No invoices found</h3>
+                      <p className="text-gray-500 mb-6">Get started by creating your first invoice</p>
+                      <button
+                        onClick={() => {
+                          setEditingInvoice(null);
+                          setIsModalOpen(true);
+                        }}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center mx-auto"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create First Invoice
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredInvoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       {invoice.invoice_number}
@@ -641,12 +709,12 @@ function Invoices() {
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
       {/* Create/Edit Invoice Modal */}
       {isModalOpen && (
@@ -799,6 +867,8 @@ function Invoices() {
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Processing...
                     </>
+                  ) : editingInvoice ? (
+                    'Update Invoice'
                   ) : (
                     'Create Invoice'
                   )}

@@ -3,6 +3,7 @@ import { Plus, Edit2, Trash2, Search, Eye, Filter } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { useAuth } from '../lib/auth';
+import { toast } from 'react-hot-toast';
 
 interface Client {
   id: string;
@@ -14,6 +15,7 @@ interface Client {
   tax_type: string;
   created_at: string;
   currency: string;
+  phone_number?: string;
 }
 
 interface FilterState {
@@ -69,28 +71,31 @@ function Clients() {
   }, [user]);
 
   async function fetchClients() {
-    const { data, error } = await supabase
-      .from('clients')
-      .select(`
-        id,
-        name,
-        company_name,
-        email,
-        client_address,
-        tax_number,
-        tax_type,
-        created_at,
-        currency
-      `)
-      .eq('user_id', user?.id)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select(`
+          id,
+          name,
+          company_name,
+          email,
+          client_address,
+          tax_number,
+          tax_type,
+          created_at,
+          currency,
+          phone_number
+        `)
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false });
 
-    if (error) {
+      if (error) throw error;
+
+      setClients(data || []);
+    } catch (error) {
       console.error('Error fetching clients:', error);
-      return;
+      toast.error('Failed to fetch clients. Please try again.');
     }
-
-    setClients(data || []);
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -99,6 +104,14 @@ function Clients() {
     try {
       setIsSubmitting(true);
       
+      if (!formData.name.trim()) {
+        throw new Error('Client name is required');
+      }
+
+      if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        throw new Error('Please enter a valid email address');
+      }
+
       if (editingClient) {
         const { error } = await supabase
           .from('clients')
@@ -106,12 +119,14 @@ function Clients() {
           .eq('id', editingClient.id);
 
         if (error) throw error;
+        toast.success('Client updated successfully');
       } else {
         const { error } = await supabase
           .from('clients')
           .insert([{ ...formData, user_id: user?.id }]);
 
         if (error) throw error;
+        toast.success('Client created successfully');
       }
 
       setIsModalOpen(false);
@@ -129,6 +144,7 @@ function Clients() {
       await fetchClients();
     } catch (error) {
       console.error('Error saving client:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to save client. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -136,17 +152,20 @@ function Clients() {
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this client?')) {
-      const { error } = await supabase
-        .from('clients')
-        .delete()
-        .eq('id', id);
+      try {
+        const { error } = await supabase
+          .from('clients')
+          .delete()
+          .eq('id', id);
 
-      if (error) {
+        if (error) throw error;
+
+        toast.success('Client deleted successfully');
+        await fetchClients();
+      } catch (error) {
         console.error('Error deleting client:', error);
-        return;
+        toast.error('Failed to delete client. Please try again.');
       }
-
-      fetchClients();
     }
   };
 
@@ -542,42 +561,104 @@ function Clients() {
       {/* Edit/Create Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-8 max-w-md w-full">
+          <div className="bg-white rounded-lg p-8 max-w-[800px] w-full">
             <h2 className="text-xl font-bold mb-4">
               {editingClient ? 'Edit Client' : 'Add New Client'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* First Column */}
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Tax Type</label>
+                    <select
+                      value={formData.tax_type}
+                      onChange={(e) => setFormData({ ...formData, tax_type: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    >
+                      <option value="">Select Tax Type</option>
+                      <option value="VAT">VAT</option>
+                      <option value="SSN">SSN</option>
+                      <option value="EIN">EIN</option>
+                      <option value="TIN">TIN</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Second Column */}
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Company Name</label>
+                    <input
+                      type="text"
+                      value={formData.company_name}
+                      onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Phone Number</label>
+                    <input
+                      type="tel"
+                      value={formData.phone_number}
+                      onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      placeholder="+1 (123) 456-7890"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Tax Number</label>
+                    <input
+                      type="text"
+                      value={formData.tax_number}
+                      onChange={(e) => setFormData({ ...formData, tax_number: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Currency Selector - Full Width */}
               <div>
-                <label className="block text-sm font-medium text-gray-700">Name *</label>
-                <input
-                  type="text"
+                <label className="block text-sm font-medium text-gray-700">Currency *</label>
+                <select
                   required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  value={formData.currency}
+                  onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
+                >
+
+                  <option value="$">$ (Dollar)</option>
+                  <option value="€">€ (Euro)</option>
+                  <option value="₹">₹ (Rupee)</option>
+                  <option value="£">£ (Pound)</option>
+                </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Company Name</label>
-                <input
-                  type="text"
-                  value={formData.company_name}
-                  onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Email</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-
+              {/* Full Width Address Field */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">Address</label>
                 <textarea
@@ -589,32 +670,8 @@ function Clients() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Tax Type</label>
-                <select
-                  value={formData.tax_type}
-                  onChange={(e) => setFormData({ ...formData, tax_type: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-                  <option value="">Select Tax Type</option>
-                  <option value="VAT">VAT</option>
-                  <option value="SSN">SSN</option>
-                  <option value="EIN">EIN</option>
-                  <option value="TIN">TIN</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Tax Number</label>
-                <input
-                  type="text"
-                  value={formData.tax_number}
-                  onChange={(e) => setFormData({ ...formData, tax_number: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3">
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 mt-8">
                 <button
                   type="button"
                   onClick={() => {

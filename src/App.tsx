@@ -8,6 +8,7 @@ import Auth from './pages/Auth';
 import { useAuth } from './lib/auth';
 import { supabase } from './lib/supabase';
 import InvoicePreview from './pages/InvoicePreview';
+import { Toaster } from 'react-hot-toast';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, signOut, loading } = useAuth();
@@ -128,22 +129,25 @@ function App() {
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/auth" element={<Auth />} />
-        <Route path="/*" element={
-          <Layout>
-            <Routes>
-              <Route path="clients" element={<Clients />} />
-              <Route path="invoices" element={<Invoices />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="/" element={<Navigate to="/clients" replace />} />
-              <Route path="/invoice-preview" element={<InvoicePreview />} />
-            </Routes>
-          </Layout>
-        } />
-      </Routes>
-    </Router>
+    <>
+      <Toaster position="top-right" />
+      <Router>
+        <Routes>
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/*" element={
+            <Layout>
+              <Routes>
+                <Route path="clients" element={<Clients />} />
+                <Route path="invoices" element={<Invoices />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="/" element={<Navigate to="/clients" replace />} />
+                <Route path="/invoice-preview" element={<InvoicePreview />} />
+              </Routes>
+            </Layout>
+          } />
+        </Routes>
+      </Router>
+    </>
   );
 }
 
