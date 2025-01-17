@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { LayoutDashboard, Users, FileText, Settings as SettingsIcon, LogOut } from 'lucide-react';
 import Clients from './pages/Clients';
@@ -10,9 +10,11 @@ import { useAuth } from './lib/auth';
 import { supabase } from './lib/supabase';
 import InvoicePreview from './pages/InvoicePreview';
 import { Toaster } from 'react-hot-toast';
+import Sidebar from './components/Sidebar';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, signOut, loading } = useAuth();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   if (loading) {
     return (
@@ -31,63 +33,18 @@ function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
-      {/* Sidebar - Fixed position */}
-      <nav className="w-64 bg-white shadow-lg fixed h-screen overflow-y-auto">
-        <div className="p-4">
-          <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
-          <p className="text-sm text-gray-600 mt-1">{user.email}</p>
-        </div>
-        <ul className="mt-4">
-          <li>
-            <Link
-              to="/reports"
-              className="flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100"
-            >
-              <LayoutDashboard className="w-5 h-5 mr-3" />
-              Reports
-            </Link>
-          </li>
-          <li>
-            <Link
-              to="/clients"
-              className="flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100"
-            >
-              <Users className="w-5 h-5 mr-3" />
-              Clients
-            </Link>
-          </li>
-          <li>
-            <Link
-              to="/invoices"
-              className="flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100"
-            >
-              <FileText className="w-5 h-5 mr-3" />
-              Invoices
-            </Link>
-          </li>
-          <li>
-            <Link
-              to="/settings"
-              className="flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100"
-            >
-              <SettingsIcon className="w-5 h-5 mr-3" />
-              Settings
-            </Link>
-          </li>
-        </ul>
-        <div className="absolute bottom-0 left-0 w-full p-4 border-t border-gray-200 bg-white">
-          <button
-            onClick={() => signOut()}
-            className="flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100 w-full rounded-md"
-          >
-            <LogOut className="w-5 h-5 mr-3" />
-            Sign Out
-          </button>
-        </div>
-      </nav>
+      <Sidebar 
+        isOpen={isSidebarOpen} 
+        toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
+      />
 
       {/* Main Content */}
-      <main className="flex-1 ml-64 p-8">
+      <main className={`
+        flex-1 transition-all duration-300 ease-in-out
+        lg:ml-64 p-4 lg:p-8
+      `}>
+        {/* Add padding for mobile menu button */}
+        <div className="h-14 lg:h-0" />
         {children}
       </main>
     </div>

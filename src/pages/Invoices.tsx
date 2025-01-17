@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, Search, Filter, Loader2, Eye, Download, Mail, FileText, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Filter, Loader2, Eye, Download, Mail, FileText, X, MoreVertical } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { useAuth } from '../lib/auth';
@@ -91,6 +91,7 @@ function Invoices() {
     subject: '',
     content: ''
   });
+  const [activeActionId, setActiveActionId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -166,6 +167,12 @@ function Invoices() {
     };
 
     fetchEmailContent();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = () => setActiveActionId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
   async function fetchInvoices() {
@@ -732,21 +739,22 @@ function Invoices() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Invoice #
+                  <span className="hidden sm:inline">Invoice #</span>
+                  <span className="sm:hidden">Info</span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Client
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Items
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Amount
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                   Actions
                 </th>
               </tr>
@@ -786,17 +794,24 @@ function Invoices() {
                 filteredInvoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {invoice.invoice_number}
+                      <div>
+                        <div>{invoice.invoice_number}</div>
+                        <div className="sm:hidden text-sm text-gray-500">
+                          {invoice.client?.name}
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {invoice.client?.name}
-                      {invoice.client?.company_name && (
-                        <span className="text-gray-500 text-sm block">
-                          {invoice.client.company_name}
-                        </span>
-                      )}
+                    <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
+                      <div>
+                        {invoice.client?.name}
+                        {invoice.client?.company_name && (
+                          <span className="text-gray-500 text-sm block">
+                            {invoice.client.company_name}
+                          </span>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="hidden lg:table-cell px-6 py-4">
                       <div className="max-w-xs">
                         {invoice.items && invoice.items.length > 0 ? (
                           <div className="text-sm text-gray-600 space-y-1">
@@ -809,52 +824,122 @@ function Invoices() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap">
                       {format(new Date(invoice.created_at), 'MMM d, yyyy')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       ${invoice.total.toFixed(2)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex space-x-3">
-                        <button
-                          onClick={() => {
-                            setViewingInvoice(invoice);
-                            setIsViewModalOpen(true);
-                          }}
-                          className="text-gray-600 hover:text-gray-800"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDownloadPDF(invoice)}
-                          className="text-gray-600 hover:text-gray-800"
-                          title="Download PDF"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEdit(invoice)}
-                          className="text-blue-600 hover:text-primary-800"
-                          title="Edit"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(invoice.id)}
-                          className="text-red-600 hover:text-red-800"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleOpenEmailModal(invoice)}
-                          className="text-gray-600 hover:text-gray-900"
-                          title="Send Email"
-                        >
-                          <Mail className="h-4 w-4" />
-                        </button>
+                    <td className="px-4 py-4 whitespace-nowrap w-24">
+                      <div className="flex items-center justify-end space-x-2">
+                        <div className="hidden sm:flex space-x-2">
+                          <button
+                            onClick={() => {
+                              setViewingInvoice(invoice);
+                              setIsViewModalOpen(true);
+                            }}
+                            className="text-gray-600 hover:text-gray-800 p-1"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDownloadPDF(invoice)}
+                            className="text-gray-600 hover:text-gray-800 p-1"
+                            title="Download PDF"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleEdit(invoice)}
+                            className="text-blue-600 hover:text-primary-800 p-1"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(invoice.id)}
+                            className="text-red-600 hover:text-red-800 p-1"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenEmailModal(invoice)}
+                            className="text-gray-600 hover:text-gray-900 p-1"
+                            title="Send Email"
+                          >
+                            <Mail className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <div className="sm:hidden">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveActionId(activeActionId === invoice.id ? null : invoice.id);
+                            }}
+                            className="text-gray-600 hover:text-gray-800 p-1"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+
+                          {activeActionId === invoice.id && (
+                            <div 
+                              className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="py-1">
+                                <button
+                                  onClick={() => {
+                                    setViewingInvoice(invoice);
+                                    setIsViewModalOpen(true);
+                                    setActiveActionId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                                >
+                                  <Eye className="w-4 h-4 mr-3" /> View Details
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleDownloadPDF(invoice);
+                                    setActiveActionId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                                >
+                                  <Download className="w-4 h-4 mr-3" /> Download PDF
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleEdit(invoice);
+                                    setActiveActionId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                                >
+                                  <Edit2 className="w-4 h-4 mr-3" /> Edit
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleDelete(invoice.id);
+                                    setActiveActionId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-3" /> Delete
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleOpenEmailModal(invoice);
+                                    setActiveActionId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                                >
+                                  <Mail className="w-4 h-4 mr-3" /> Send Email
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
