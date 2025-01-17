@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, Search, Filter, Loader2, Eye, Download } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Filter, Loader2, Eye, Download, Mail, FileText, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { useAuth } from '../lib/auth';
 import { generateInvoicePDF } from '../services/generateInvoicePDF.tsx';
 import type { Settings } from '../types/settings';
 import { toast } from 'react-hot-toast';
+// import { sendInvoiceEmail } from '../services/emailService';
 
 interface Client {
   id: string;
@@ -80,6 +81,16 @@ function Invoices() {
   }>({ loading: false, message: '', type: null });
   const [isLoading, setIsLoading] = useState(true);
   const initialLoadRef = useRef(false);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [customMessage, setCustomMessage] = useState('');
+  const [emailContent, setEmailContent] = useState('');
+  const [emailForm, setEmailForm] = useState({
+    to: '',
+    subject: '',
+    content: ''
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -137,6 +148,26 @@ function Invoices() {
     };
   }, [user]);
 
+  useEffect(() => {
+    const fetchEmailContent = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('business_settings')
+          .select('email_content')
+          .single();
+
+        if (error) throw error;
+        if (data?.email_content) {
+          setEmailContent(data.email_content);
+        }
+      } catch (error) {
+        console.error('Error fetching email content:', error);
+      }
+    };
+
+    fetchEmailContent();
+  }, []);
+
   async function fetchInvoices() {
     try {
       if (!initialLoadRef.current) {
@@ -147,33 +178,16 @@ function Invoices() {
         .from('invoices')
         .select(`
           *,
-          client:clients(id, name, company_name)
+          client:clients(id, name, company_name, email)
         `)
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
+        .eq('user_id', user?.id);
 
       if (invoicesError) throw invoicesError;
 
-      if (!invoicesData) {
-        setInvoices([]);
-        return;
-      }
-
-      const invoicesWithItems = await Promise.all(
-        invoicesData.map(async (invoice) => {
-          const { data: itemsData } = await supabase
-            .from('invoice_items')
-            .select('*')
-            .eq('invoice_id', invoice.id);
-
-          return { ...invoice, items: itemsData || [] };
-        })
-      );
-
-      setInvoices(invoicesWithItems);
+      setInvoices(invoicesData || []);
     } catch (error) {
       console.error('Error fetching invoices:', error);
-      toast.error('Failed to fetch invoices. Please try again.');
+      toast.error('Failed to fetch invoices');
     } finally {
       setIsRefreshing(false);
     }
@@ -432,6 +446,70 @@ function Invoices() {
       toast.error('Failed to refresh data');
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleSendEmail = async (invoice: Invoice, message?: string) => {
+    try {
+      setEmailLoading(true);
+      
+      // Generate PDF
+      const pdfBlob = await generateInvoicePDF(invoice, settings);
+      
+      // Send email
+      await sendInvoiceEmail({
+        to: invoice.client?.email || '',
+        invoiceNumber: invoice.invoice_number,
+        clientName: invoice.client?.name || 'Valued Customer',
+        amount: invoice.total,
+        pdfBlob: pdfBlob,
+        items: invoice.items,
+        customMessage: message
+      });
+
+      setEmailModalOpen(false);
+      setSelectedInvoice(null);
+      setCustomMessage('');
+      toast.success('Invoice sent successfully');
+    } catch (error) {
+      console.error('Error sending invoice:', error);
+      toast.error('Failed to send invoice. Please try again.');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const replaceTemplateVariables = (content: string, invoice: Invoice) => {
+    return content
+      .replace(/{clientName}/g, invoice.client?.name || 'Valued Customer')
+      .replace(/{invoiceNumber}/g, invoice.invoice_number)
+      .replace(/{amount}/g, `$${invoice.total.toFixed(2)}`);
+  };
+
+  const handleOpenEmailModal = async (invoice: Invoice) => {
+    try {
+      // Fetch client details including email
+      const { data: clientData, error: clientError } = await supabase
+        .from('clients')
+        .select('email, name')
+        .eq('id', invoice.client_id)
+        .single();
+
+      if (clientError) throw clientError;
+
+      setSelectedInvoice(invoice);
+      setEmailForm({
+        to: clientData?.email || '',
+        subject: `Invoice #${invoice.invoice_number} - ${clientData?.name || 'Client'}`,
+        content: replaceTemplateVariables(emailContent, { 
+          ...invoice, 
+          client: { ...invoice.client, email: clientData?.email } 
+        })
+      });
+      setEmailModalOpen(true);
+    } catch (error) {
+      console.error('Error fetching client email:', error);
+      toast.error('Failed to fetch client email');
     }
   };
 
@@ -705,6 +783,13 @@ function Invoices() {
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenEmailModal(invoice)}
+                          className="text-gray-600 hover:text-gray-900"
+                          title="Send Email"
+                        >
+                          <Mail className="h-4 w-4" />
                         </button>
                       </div>
                     </td>
@@ -994,6 +1079,101 @@ function Invoices() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Modal */}
+      {emailModalOpen && selectedInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-lg font-semibold">Send Invoice</h3>
+              <button
+                onClick={() => {
+                  setEmailModalOpen(false);
+                  setSelectedInvoice(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form className="space-y-4">
+              {/* Send To Field */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Send To
+                </label>
+                <input
+                  type="email"
+                  value={emailForm.to}
+                  onChange={(e) => setEmailForm(prev => ({ ...prev, to: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="Enter client email"
+                  required
+                />
+              </div>
+
+              {/* Subject Field */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={emailForm.subject}
+                  onChange={(e) => setEmailForm(prev => ({ ...prev, subject: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  required
+                />
+              </div>
+
+              {/* Content Field */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Content
+                </label>
+                <textarea
+                  value={emailForm.content}
+                  onChange={(e) => setEmailForm(prev => ({ ...prev, content: e.target.value }))}
+                  rows={6}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  required
+                />
+              </div>
+
+              {/* Attachment Preview */}
+              <div className="bg-gray-50 p-3 rounded-md">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-gray-500" />
+                  <span className="text-sm text-gray-600">
+                    Invoice_{selectedInvoice.invoice_number}.pdf
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmailModalOpen(false);
+                    setSelectedInvoice(null);
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                >
+                  Send Invoice
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

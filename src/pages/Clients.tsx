@@ -419,57 +419,78 @@ function Clients() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredClients.map((client) => (
-                <tr key={client.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">{client.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">{client.company_name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {format(new Date(client.created_at), 'MMM d, yyyy')}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">{client.currency}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex space-x-3">
+              {clients.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-center py-12">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No clients found</h3>
+                      <p className="text-gray-500 mb-6">Get started by adding your first client</p>
                       <button
                         onClick={() => {
-                          setViewingClient(client);
-                          setIsViewModalOpen(true);
-                        }}
-                        className="text-gray-600 hover:text-gray-800"
-                        title="View Details"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditingClient(client);
-                          setFormData({
-                            name: client.name,
-                            company_name: client.company_name,
-                            email: client.email,
-                            client_address: client.client_address,
-                            tax_number: client.tax_number,
-                            tax_type: client.tax_type,
-                            phone_number: client.phone_number,
-                            currency: client.currency
-                          });
+                          setEditingClient(null);
                           setIsModalOpen(true);
                         }}
-                        className="text-blue-600 hover:text-blue-800"
-                        title="Edit"
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center mx-auto"
                       >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(client.id)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create First Client
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredClients.map((client) => (
+                  <tr key={client.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">{client.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">{client.company_name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {format(new Date(client.created_at), 'MMM d, yyyy')}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">{client.currency}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => {
+                            setViewingClient(client);
+                            setIsViewModalOpen(true);
+                          }}
+                          className="text-gray-600 hover:text-gray-800"
+                          title="View Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingClient(client);
+                            setFormData({
+                              name: client.name,
+                              company_name: client.company_name,
+                              email: client.email,
+                              client_address: client.client_address,
+                              tax_number: client.tax_number,
+                              tax_type: client.tax_type,
+                              phone_number: client.phone_number,
+                              currency: client.currency
+                            });
+                            setIsModalOpen(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-800"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(client.id)}
+                          className="text-red-600 hover:text-red-800"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -25,6 +25,7 @@ interface BusinessSettings {
   wise_email: string | null;
   logo_url: string | null;
   invoice_number: number | null;
+  email_content: string | null;
 }
 
 function Settings() {
@@ -51,6 +52,7 @@ function Settings() {
     wise_email: null,
     logo_url: null,
     invoice_number: null,
+    email_content: null,
   });
 
   useEffect(() => {
@@ -573,6 +575,39 @@ function Settings() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Email Settings</h3>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Default Email Content
+              </label>
+              <div className="mb-2 text-sm text-gray-500">
+                Available variables:
+                <ul className="list-disc list-inside ml-2">
+                  <li>{'{clientName}'} - Client's name</li>
+                  <li>{'{invoiceNumber}'} - Invoice number</li>
+                  <li>{'{amount}'} - Invoice amount</li>
+                </ul>
+              </div>
+              <textarea
+                value={settings?.email_content || ''}
+                onChange={(e) => {
+                  setSettings(prev => prev ? {
+                    ...prev,
+                    email_content: e.target.value
+                  } : null);
+                }}
+                rows={6}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                placeholder="Example: Hi {clientName}, Please find attached invoice #{invoiceNumber}..."
+              />
+              <p className="mt-1 text-sm text-gray-500">
+                This content will be pre-filled when sending invoices via email.
+              </p>
             </div>
           </div>
         </div>

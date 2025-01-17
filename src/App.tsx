@@ -5,6 +5,7 @@ import Clients from './pages/Clients';
 import Invoices from './pages/Invoices';
 import Settings from './pages/Settings';
 import Auth from './pages/Auth';
+import Reports from './pages/Reports';
 import { useAuth } from './lib/auth';
 import { supabase } from './lib/supabase';
 import InvoicePreview from './pages/InvoicePreview';
@@ -12,8 +13,6 @@ import { Toaster } from 'react-hot-toast';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, signOut, loading } = useAuth();
-
-  console.log('Layout render:', { user, loading });
 
   if (loading) {
     return (
@@ -27,7 +26,6 @@ function Layout({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
-    console.log('No user found, redirecting to auth');
     return <Navigate to="/auth" replace />;
   }
 
@@ -40,6 +38,15 @@ function Layout({ children }: { children: React.ReactNode }) {
           <p className="text-sm text-gray-600 mt-1">{user.email}</p>
         </div>
         <ul className="mt-4">
+          <li>
+            <Link
+              to="/reports"
+              className="flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100"
+            >
+              <LayoutDashboard className="w-5 h-5 mr-3" />
+              Reports
+            </Link>
+          </li>
           <li>
             <Link
               to="/clients"
@@ -109,8 +116,6 @@ function App() {
     };
   }, []);
 
-  console.log('App render:', { loading, user });
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -137,10 +142,11 @@ function App() {
           <Route path="/*" element={
             <Layout>
               <Routes>
+                <Route path="reports" element={<Reports />} />
                 <Route path="clients" element={<Clients />} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="settings" element={<Settings />} />
-                <Route path="/" element={<Navigate to="/clients" replace />} />
+                <Route path="/" element={<Navigate to="/reports" replace />} />
                 <Route path="/invoice-preview" element={<InvoicePreview />} />
               </Routes>
             </Layout>
