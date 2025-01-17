@@ -178,9 +178,11 @@ function Invoices() {
         .from('invoices')
         .select(`
           *,
-          client:clients(id, name, company_name, email)
+          client:clients(id, name, company_name, email),
+          items:invoice_items(id, name, description, price)
         `)
-        .eq('user_id', user?.id);
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false });
 
       if (invoicesError) throw invoicesError;
 
@@ -246,68 +248,94 @@ function Invoices() {
         throw new Error('Please add at least one item with name and price');
       }
 
-      const nextNumber = (settings.invoice_number || 0) + 1;
-      const invoiceNumber = generateInvoiceNumber(settings);
-
-      // First create the invoice
-      const { data: invoiceData, error: invoiceError } = await supabase
-        .from('invoices')
-        .insert([{
-          client_id: selectedClient,
-          invoice_number: invoiceNumber,
-          total: items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0),
-          user_id: user.id,
-          created_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
-
-      if (invoiceError) throw invoiceError;
-      if (!invoiceData) throw new Error('No invoice data returned');
-
-      // Update the invoice number in settings
-      const { error: settingsError } = await supabase
-        .from('business_settings')
-        .update({ invoice_number: nextNumber })
-        .eq('user_id', user.id);
-
-      if (settingsError) {
-        console.error('Error updating invoice number:', settingsError);
-        toast.error('Warning: Invoice number may not have updated correctly');
-      }
-
-      // Then create all items
-      const itemsToCreate = items.map(item => ({
-        invoice_id: invoiceData.id,
-        name: item.name,
-        description: item.description,
-        price: parseFloat(item.price),
-        user_id: user.id
-      }));
-
-      const { error: itemsError } = await supabase
-        .from('invoice_items')
-        .insert(itemsToCreate);
-
-      if (itemsError) {
-        // If items creation fails, delete the invoice
-        await supabase
+      if (editingInvoice) {
+        // Update existing invoice
+        const { error: invoiceError } = await supabase
           .from('invoices')
+          .update({
+            client_id: selectedClient,
+            total: items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0),
+            user_id: user.id
+          })
+          .eq('id', editingInvoice.id);
+
+        if (invoiceError) throw invoiceError;
+
+        // Delete existing items
+        const { error: deleteError } = await supabase
+          .from('invoice_items')
           .delete()
-          .eq('id', invoiceData.id);
-        throw itemsError;
+          .eq('invoice_id', editingInvoice.id);
+
+        if (deleteError) throw deleteError;
+
+        // Create new items
+        const { error: itemsError } = await supabase
+          .from('invoice_items')
+          .insert(items.map(item => ({
+            invoice_id: editingInvoice.id,
+            name: item.name,
+            description: item.description,
+            price: parseFloat(item.price),
+            user_id: user.id
+          })));
+
+        if (itemsError) throw itemsError;
+
+        toast.success('Invoice updated successfully!');
+      } else {
+        // Create new invoice
+        const nextNumber = (settings.invoice_number || 0) + 1;
+        const invoiceNumber = generateInvoiceNumber(settings);
+
+        const { data: invoiceData, error: invoiceError } = await supabase
+          .from('invoices')
+          .insert([{
+            client_id: selectedClient,
+            invoice_number: invoiceNumber,
+            total: items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0),
+            user_id: user.id,
+            created_at: new Date().toISOString()
+          }])
+          .select()
+          .single();
+
+        if (invoiceError) throw invoiceError;
+        if (!invoiceData) throw new Error('No invoice data returned');
+
+        // Update the invoice number in settings
+        const { error: settingsError } = await supabase
+          .from('business_settings')
+          .update({ invoice_number: nextNumber })
+          .eq('user_id', user.id);
+
+        if (settingsError) {
+          console.error('Error updating invoice number:', settingsError);
+          toast.error('Warning: Invoice number may not have updated correctly');
+        }
+
+        // Create items
+        const { error: itemsError } = await supabase
+          .from('invoice_items')
+          .insert(items.map(item => ({
+            invoice_id: invoiceData.id,
+            name: item.name,
+            description: item.description,
+            price: parseFloat(item.price),
+            user_id: user.id
+          })));
+
+        if (itemsError) throw itemsError;
+
+        toast.success('Invoice created successfully!');
       }
 
-      toast.success('Invoice created successfully!');
       setIsModalOpen(false);
       resetForm();
-      await Promise.all([
-        fetchInvoices(),
-        fetchSettings()
-      ]);
+      await fetchInvoices();
     } catch (error) {
       console.error('Error in handleSubmit:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to create invoice. Please try again.');
+      toast.error(error instanceof Error ? error.message : 'Failed to save invoice. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -344,6 +372,7 @@ function Invoices() {
   const resetForm = () => {
     setSelectedClient('');
     setItems([{ name: '', description: '', price: '' }]);
+    setEditingInvoice(null);
     setSubmitStatus({ loading: false, message: '', type: null });
   };
 
@@ -511,6 +540,28 @@ function Invoices() {
       console.error('Error fetching client email:', error);
       toast.error('Failed to fetch client email');
     }
+  };
+
+  const handleEdit = (invoice: Invoice) => {
+    setEditingInvoice(invoice);
+    setSelectedClient(invoice.client_id);
+    // Map the existing items to match the form structure
+    setItems(
+      invoice.items.map(item => ({
+        name: item.name,
+        description: item.description,
+        price: item.price.toString()
+      }))
+    );
+    setIsModalOpen(true);
+  };
+
+  const addItem = () => {
+    setItems([...items, { name: '', description: '', price: '' }]);
+  };
+
+  const removeItem = (index: number) => {
+    setItems(items.filter((_, i) => i !== index));
   };
 
   return (
@@ -687,6 +738,9 @@ function Invoices() {
                   Client
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Items
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -742,6 +796,19 @@ function Invoices() {
                         </span>
                       )}
                     </td>
+                    <td className="px-6 py-4">
+                      <div className="max-w-xs">
+                        {invoice.items && invoice.items.length > 0 ? (
+                          <div className="text-sm text-gray-600 space-y-1">
+                            {invoice.items.map((item, index) => (
+                              <div key={index}>{item.name}</div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400">No items</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {format(new Date(invoice.created_at), 'MMM d, yyyy')}
                     </td>
@@ -768,11 +835,8 @@ function Invoices() {
                           <Download className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => {
-                            setEditingInvoice(invoice);
-                            setIsModalOpen(true);
-                          }}
-                          className="text-blue-600 hover:text-blue-800"
+                          onClick={() => handleEdit(invoice)}
+                          className="text-blue-600 hover:text-primary-800"
                           title="Edit"
                         >
                           <Edit2 className="w-4 h-4" />
@@ -821,15 +885,15 @@ function Invoices() {
 
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Client Selection */}
-              <div>
+              <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Client *
+                  Client
                 </label>
                 <select
                   required
                   value={selectedClient}
                   onChange={(e) => setSelectedClient(e.target.value)}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                   disabled={isSubmitting}
                 >
                   <option value="">Select a client</option>
@@ -841,82 +905,83 @@ function Invoices() {
                 </select>
               </div>
 
-              {/* Invoice Items */}
+              {/* Items */}
               <div className="space-y-4">
-                <label className="block text-sm font-medium text-gray-700">
-                  Items *
-                </label>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-medium">Items</h3>
+                  <button
+                    type="button"
+                    onClick={addItem}
+                    className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                  >
+                    Add Item
+                  </button>
+                </div>
+                
                 {items.map((item, index) => (
-                  <div key={index} className="flex gap-4">
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        required
-                        placeholder="Item name"
-                        value={item.name}
-                        onChange={(e) => {
-                          const newItems = [...items];
-                          newItems[index].name = e.target.value;
-                          setItems(newItems);
-                        }}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        disabled={isSubmitting}
-                      />
+                  <div key={index} className="p-4 border rounded-lg space-y-3">
+                    <div className="flex justify-between items-start">
+                      <h4 className="text-sm font-medium">Item {index + 1}</h4>
+                      {items.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeItem(index)}
+                          className="text-gray-400 hover:text-red-600"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        placeholder="Description"
-                        value={item.description}
-                        onChange={(e) => {
-                          const newItems = [...items];
-                          newItems[index].description = e.target.value;
-                          setItems(newItems);
-                        }}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        disabled={isSubmitting}
-                      />
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Name *</label>
+                        <input
+                          required
+                          type="text"
+                          value={item.name}
+                          onChange={(e) => {
+                            const newItems = [...items];
+                            newItems[index].name = e.target.value;
+                            setItems(newItems);
+                          }}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Price *</label>
+                        <input
+                          required
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={item.price}
+                          onChange={(e) => {
+                            const newItems = [...items];
+                            newItems[index].price = e.target.value;
+                            setItems(newItems);
+                          }}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                        />
+                      </div>
+                      
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700">Description</label>
+                        <textarea
+                          value={item.description}
+                          onChange={(e) => {
+                            const newItems = [...items];
+                            newItems[index].description = e.target.value;
+                            setItems(newItems);
+                          }}
+                          rows={2}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                        />
+                      </div>
                     </div>
-                    <div className="w-32">
-                      <input
-                        type="number"
-                        required
-                        step="0.01"
-                        min="0"
-                        placeholder="Price"
-                        value={item.price}
-                        onChange={(e) => {
-                          const newItems = [...items];
-                          newItems[index].price = e.target.value;
-                          setItems(newItems);
-                        }}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        disabled={isSubmitting}
-                      />
-                    </div>
-                    {items.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newItems = items.filter((_, i) => i !== index);
-                          setItems(newItems);
-                        }}
-                        className="text-red-600 hover:text-red-800"
-                        disabled={isSubmitting}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
                   </div>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => setItems([...items, { name: '', description: '', price: '' }])}
-                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                  disabled={isSubmitting}
-                >
-                  + Add Item
-                </button>
               </div>
 
               {/* Total */}
@@ -1038,19 +1103,21 @@ function Invoices() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {viewingInvoice.items.map((item, index) => (
-                        <tr key={item.id || index}>
-                          <td className="px-4 py-2 text-sm text-gray-900">{item.name}</td>
-                          <td className="px-4 py-2 text-sm text-gray-500">{item.description}</td>
-                          <td className="px-4 py-2 text-sm text-gray-900 text-right">${item.price.toFixed(2)}</td>
+                      {viewingInvoice.items && viewingInvoice.items.length > 0 ? (
+                        viewingInvoice.items.map((item, index) => (
+                          <tr key={item.id || index}>
+                            <td className="px-4 py-2 text-sm text-gray-900">{item.name}</td>
+                            <td className="px-4 py-2 text-sm text-gray-500">{item.description}</td>
+                            <td className="px-4 py-2 text-sm text-gray-900 text-right">${item.price.toFixed(2)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-2 text-sm text-gray-500 text-center">
+                            No items found
+                          </td>
                         </tr>
-                      ))}
-                      <tr className="bg-gray-50">
-                        <td colSpan={2} className="px-4 py-2 text-sm font-medium text-gray-900 text-right">Total:</td>
-                        <td className="px-4 py-2 text-sm font-bold text-gray-900 text-right">
-                          ${viewingInvoice.total.toFixed(2)}
-                        </td>
-                      </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

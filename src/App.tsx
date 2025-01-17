@@ -18,7 +18,7 @@ function Layout({ children }: { children: React.ReactNode }) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
           <p className="text-gray-600">Loading your dashboard...</p>
         </div>
       </div>
@@ -75,7 +75,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             </Link>
           </li>
         </ul>
-        <div className="absolute bottom-0 left-0 w-full p-4 border-t bg-white">
+        <div className="absolute bottom-0 left-0 w-full p-4 border-t border-gray-200 bg-white">
           <button
             onClick={() => signOut()}
             className="flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100 w-full rounded-md"
@@ -86,7 +86,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
-      {/* Main Content - With left margin to account for fixed sidebar */}
+      {/* Main Content */}
       <main className="flex-1 ml-64 p-8">
         {children}
       </main>
@@ -120,11 +120,11 @@ function App() {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
           <p className="text-gray-600">Initializing app...</p>
           <button 
             onClick={() => window.location.href = '/auth'} 
-            className="mt-4 text-blue-600 hover:text-blue-800"
+            className="mt-4 text-primary-600 hover:text-primary-800"
           >
             Click here if loading takes too long
           </button>
@@ -139,18 +139,21 @@ function App() {
       <Router>
         <Routes>
           <Route path="/auth" element={<Auth />} />
-          <Route path="/*" element={
-            <Layout>
-              <Routes>
-                <Route path="reports" element={<Reports />} />
-                <Route path="clients" element={<Clients />} />
-                <Route path="invoices" element={<Invoices />} />
-                <Route path="settings" element={<Settings />} />
-                <Route path="/" element={<Navigate to="/reports" replace />} />
-                <Route path="/invoice-preview" element={<InvoicePreview />} />
-              </Routes>
-            </Layout>
-          } />
+          <Route
+            path="/*"
+            element={
+              <Layout>
+                <Routes>
+                  <Route path="reports" element={<Reports />} />
+                  <Route path="clients" element={<Clients />} />
+                  <Route path="invoices" element={<Invoices />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="/" element={<Navigate to="/reports" replace />} />
+                  <Route path="/invoice-preview" element={<InvoicePreview />} />
+                </Routes>
+              </Layout>
+            }
+          />
         </Routes>
       </Router>
     </>
