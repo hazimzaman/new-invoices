@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Search, Eye, Filter } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Eye, Filter, Loader2, MoreVertical } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { useAuth } from '../lib/auth';
 import { toast } from 'react-hot-toast';
+import { ContextMenu } from '../components/ContextMenu';
 
 interface Client {
   id: string;
@@ -63,6 +64,9 @@ function Clients() {
     sortOrder: 'asc'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [selectionMode, setSelectionMode] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -72,6 +76,7 @@ function Clients() {
 
   async function fetchClients() {
     try {
+      setIsLoading(true);
       const { data, error } = await supabase
         .from('clients')
         .select(`
@@ -95,6 +100,8 @@ function Clients() {
     } catch (error) {
       console.error('Error fetching clients:', error);
       toast.error('Failed to fetch clients. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -169,6 +176,21 @@ function Clients() {
     }
   };
 
+  const handleEdit = (client: Client) => {
+    setEditingClient(client);
+    setFormData({
+      name: client.name,
+      company_name: client.company_name,
+      email: client.email,
+      client_address: client.client_address,
+      tax_number: client.tax_number,
+      tax_type: client.tax_type,
+      phone_number: client.phone_number,
+      currency: client.currency
+    });
+    setIsModalOpen(true);
+  };
+
   const filteredClients = clients
     .filter(client => {
       const matchesSearch = 
@@ -234,497 +256,579 @@ function Clients() {
     });
   };
 
-  return (
-    <div className="h-full flex flex-col">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Clients</h1>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Client
-        </button>
-      </div>
+  // Bulk selection handlers
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedClients(filteredClients.map(client => client.id));
+    } else {
+      setSelectedClients([]);
+    }
+  };
 
-      <div className="mb-6 space-y-4">
-        <div className="flex gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input
-              type="text"
-              placeholder="Search clients..."
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+  const handleSelectClient = (clientId: string) => {
+    setSelectedClients(prev => 
+      prev.includes(clientId) 
+        ? prev.filter(id => id !== clientId)
+        : [...prev, clientId]
+    );
+  };
+
+  // Bulk actions
+  const handleBulkDelete = async () => {
+    if (!selectedClients.length) return;
+
+    if (window.confirm(`Are you sure you want to delete ${selectedClients.length} client(s)?`)) {
+      try {
+        const { error } = await supabase
+          .from('clients')
+          .delete()
+          .in('id', selectedClients);
+
+        if (error) throw error;
+
+        toast.success(`Successfully deleted ${selectedClients.length} client(s)`);
+        setSelectedClients([]);
+        fetchClients();
+      } catch (error) {
+        console.error('Error deleting clients:', error);
+        toast.error('Failed to delete clients');
+      }
+    }
+  };
+
+  return (
+    <div>
+      <div className="h-full flex flex-col">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-gray-800">Clients</h1>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSelectionMode(!selectionMode)}
+              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              {selectionMode ? 'Cancel Selection' : 'Select'}
+            </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Client
+            </button>
           </div>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`px-4 py-2 border rounded-lg flex items-center gap-2 ${
-              showFilters ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            Filters
-            {Object.values(filters).some(value => 
-              value !== '' && value !== 'none' && 
-              !(typeof value === 'object' && Object.values(value).every(v => v === ''))
-            ) && (
-              <span className="w-2 h-2 rounded-full bg-blue-600" />
-            )}
-          </button>
         </div>
 
-        {showFilters && (
-          <div className="bg-white rounded-lg shadow p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Name
-                </label>
-                <input
-                  type="text"
-                  value={filters.name}
-                  onChange={(e) => setFilters({ ...filters, name: e.target.value })}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Filter by name..."
-                />
+        <div className="mb-6 space-y-4">
+          <div className="flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Search clients..."
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-4 py-2 border rounded-lg flex items-center gap-2 ${
+                showFilters ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filters
+              {Object.values(filters).some(value => 
+                value !== '' && value !== 'none' && 
+                !(typeof value === 'object' && Object.values(value).every(v => v === ''))
+              ) && (
+                <span className="w-2 h-2 rounded-full bg-blue-600" />
+              )}
+            </button>
+          </div>
+
+          {showFilters && (
+            <div className="bg-white rounded-lg shadow p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Filter by Name
+                  </label>
+                  <input
+                    type="text"
+                    value={filters.name}
+                    onChange={(e) => setFilters({ ...filters, name: e.target.value })}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="Filter by name..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Filter by Company
+                  </label>
+                  <input
+                    type="text"
+                    value={filters.company}
+                    onChange={(e) => setFilters({ ...filters, company: e.target.value })}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="Filter by company..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Filter by Email
+                  </label>
+                  <input
+                    type="text"
+                    value={filters.email}
+                    onChange={(e) => setFilters({ ...filters, email: e.target.value })}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="Filter by email..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Filter by Currency
+                  </label>
+                  <select
+                    value={filters.currency}
+                    onChange={(e) => setFilters({ ...filters, currency: e.target.value })}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  >
+                    <option value="">All Currencies</option>
+                    <option value="$">$ (Dollar)</option>
+                    <option value="€">€ (Euro)</option>
+                    <option value="₹">₹ (Rupee)</option>
+                    <option value="£">£ (Pound)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Date Range
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={filters.dateRange.from}
+                      onChange={(e) => setFilters({
+                        ...filters,
+                        dateRange: { ...filters.dateRange, from: e.target.value }
+                      })}
+                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    />
+                    <input
+                      type="date"
+                      value={filters.dateRange.to}
+                      onChange={(e) => setFilters({
+                        ...filters,
+                        dateRange: { ...filters.dateRange, to: e.target.value }
+                      })}
+                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Sort By
+                  </label>
+                  <div className="flex gap-2">
+                    <select
+                      value={filters.sortBy}
+                      onChange={(e) => setFilters({
+                        ...filters,
+                        sortBy: e.target.value as FilterState['sortBy']
+                      })}
+                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    >
+                      <option value="none">No Sorting</option>
+                      <option value="name">Name</option>
+                      <option value="company">Company</option>
+                      <option value="date">Date Created</option>
+                    </select>
+                    <select
+                      value={filters.sortOrder}
+                      onChange={(e) => setFilters({
+                        ...filters,
+                        sortOrder: e.target.value as 'asc' | 'desc'
+                      })}
+                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    >
+                      <option value="asc">Ascending</option>
+                      <option value="desc">Descending</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Company
-                </label>
-                <input
-                  type="text"
-                  value={filters.company}
-                  onChange={(e) => setFilters({ ...filters, company: e.target.value })}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Filter by company..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Email
-                </label>
-                <input
-                  type="text"
-                  value={filters.email}
-                  onChange={(e) => setFilters({ ...filters, email: e.target.value })}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Filter by email..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Currency
-                </label>
-                <select
-                  value={filters.currency}
-                  onChange={(e) => setFilters({ ...filters, currency: e.target.value })}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={resetFilters}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                 >
-                  <option value="">All Currencies</option>
-                  <option value="$">$ (Dollar)</option>
-                  <option value="€">€ (Euro)</option>
-                  <option value="₹">₹ (Rupee)</option>
-                  <option value="£">£ (Pound)</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Date Range
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    value={filters.dateRange.from}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      dateRange: { ...filters.dateRange, from: e.target.value }
-                    })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                  <input
-                    type="date"
-                    value={filters.dateRange.to}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      dateRange: { ...filters.dateRange, to: e.target.value }
-                    })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Sort By
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    value={filters.sortBy}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      sortBy: e.target.value as FilterState['sortBy']
-                    })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  >
-                    <option value="none">No Sorting</option>
-                    <option value="name">Name</option>
-                    <option value="company">Company</option>
-                    <option value="date">Date Created</option>
-                  </select>
-                  <select
-                    value={filters.sortOrder}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      sortOrder: e.target.value as 'asc' | 'desc'
-                    })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  >
-                    <option value="asc">Ascending</option>
-                    <option value="desc">Descending</option>
-                  </select>
-                </div>
+                  Reset Filters
+                </button>
               </div>
             </div>
+          )}
+        </div>
 
-            <div className="flex justify-end gap-2">
+        {/* Only show bulk actions when in selection mode and items are selected */}
+        {selectionMode && selectedClients.length > 0 && (
+          <div className="mb-4 p-2 bg-gray-50 rounded-lg flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              {selectedClients.length} client(s) selected
+            </div>
+            <div className="flex gap-2">
               <button
-                onClick={resetFilters}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                onClick={handleBulkDelete}
+                className="px-3 py-1 text-sm text-red-600 hover:text-red-800 flex items-center gap-1"
               >
-                Reset Filters
+                <Trash2 className="w-4 h-4" />
+                Delete
               </button>
             </div>
           </div>
         )}
-      </div>
 
-      <div className="flex-1 bg-white rounded-lg shadow overflow-hidden min-h-0">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Currency</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {clients.length === 0 ? (
+        <div className="flex-1 bg-white rounded-lg shadow overflow-hidden min-h-0 no-select">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td colSpan={6} className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-center py-12">
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">No clients found</h3>
-                      <p className="text-gray-500 mb-6">Get started by adding your first client</p>
-                      <button
-                        onClick={() => {
-                          setEditingClient(null);
-                          setIsModalOpen(true);
-                        }}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center mx-auto"
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Create First Client
-                      </button>
-                    </div>
-                  </td>
+                  {selectionMode && (
+                    <th className="px-3 py-2 text-left">
+                      <input
+                        type="checkbox"
+                        checked={selectedClients.length === filteredClients.length}
+                        onChange={handleSelectAll}
+                        className="rounded border-gray-300 can-select"
+                      />
+                    </th>
+                  )}
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                  <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
+                  <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                  <th className="hidden sm:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Currency</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              ) : (
-                filteredClients.map((client) => (
-                  <tr key={client.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">{client.name}</td>
-                    <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap">{client.company_name}</td>
-                    <td className="hidden lg:table-cell px-6 py-4 whitespace-nowrap">
-                      {format(new Date(client.created_at), 'MMM d, yyyy')}
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-4">
+                      <div className="flex justify-center">
+                        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                      </div>
                     </td>
-                    <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">{client.currency}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex space-x-3">
+                  </tr>
+                ) : clients.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-center py-12">
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No clients found</h3>
+                        <p className="text-gray-500 mb-6">Get started by adding your first client</p>
                         <button
                           onClick={() => {
-                            setViewingClient(client);
-                            setIsViewModalOpen(true);
-                          }}
-                          className="text-gray-600 hover:text-gray-800"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingClient(client);
-                            setFormData({
-                              name: client.name,
-                              company_name: client.company_name,
-                              email: client.email,
-                              client_address: client.client_address,
-                              tax_number: client.tax_number,
-                              tax_type: client.tax_type,
-                              phone_number: client.phone_number,
-                              currency: client.currency
-                            });
+                            setEditingClient(null);
                             setIsModalOpen(true);
                           }}
-                          className="text-blue-600 hover:text-blue-800"
-                          title="Edit"
+                          className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center mx-auto"
                         >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(client.id)}
-                          className="text-red-600 hover:text-red-800"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
+                          <Plus className="w-4 h-4 mr-2" />
+                          Create First Client
                         </button>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* View Details Modal */}
-      {isViewModalOpen && viewingClient && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-8 max-w-md w-full">
-            <div className="flex justify-between items-start mb-6">
-              <h2 className="text-xl font-bold">Client Details</h2>
-              <button
-                onClick={() => {
-                  setIsViewModalOpen(false);
-                  setViewingClient(null);
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ×
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Name</label>
-                <p className="mt-1 text-gray-900">{viewingClient.name}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Company</label>
-                <p className="mt-1 text-gray-900">{viewingClient.company_name || '-'}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Address</label>
-                <p className="mt-1 text-gray-900 whitespace-pre-line">
-                  {viewingClient.client_address}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Tax Information</label>
-                <p className="mt-1 text-gray-900">
-                  {viewingClient.tax_type}: {viewingClient.tax_number}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Email</label>
-                <p className="mt-1 text-gray-900">{viewingClient.email}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Created</label>
-                <p className="mt-1 text-gray-900">
-                  {format(new Date(viewingClient.created_at), 'MMM d, yyyy')}
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setViewingClient(null);
-                  setIsViewModalOpen(false);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  setEditingClient(viewingClient);
-                  setFormData({
-                    name: viewingClient.name,
-                    company_name: viewingClient.company_name,
-                    email: viewingClient.email,
-                    client_address: viewingClient.client_address,
-                    tax_number: viewingClient.tax_number,
-                    tax_type: viewingClient.tax_type,
-                    phone_number: viewingClient.phone_number,
-                    currency: viewingClient.currency
-                  });
-                  setIsViewModalOpen(false);
-                  setIsModalOpen(true);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                Edit
-              </button>
-            </div>
+                ) : (
+                  filteredClients.map((client) => (
+                    <tr key={client.id} className="hover:bg-gray-50">
+                      {selectionMode && (
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedClients.includes(client.id)}
+                            onChange={() => handleSelectClient(client.id)}
+                            className="rounded border-gray-300 can-select"
+                          />
+                        </td>
+                      )}
+                      <td className="px-3 py-2 can-select">{client.name}</td>
+                      <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap no-select">{client.company_name || '-'}</td>
+                      <td className="hidden lg:table-cell px-3 py-2 whitespace-nowrap">
+                        {format(new Date(client.created_at), 'MMM d, yyyy')}
+                      </td>
+                      <td className="hidden sm:table-cell px-3 py-2 whitespace-nowrap">{client.currency || '$'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="flex space-x-3">
+                          <button
+                            onClick={() => {
+                              setViewingClient(client);
+                              setIsViewModalOpen(true);
+                            }}
+                            className="text-gray-600 hover:text-gray-800"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleEdit(client)}
+                            className="text-blue-600 hover:text-blue-800"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(client.id)}
+                            className="text-red-600 hover:text-red-800"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      )}
 
-      {/* Edit/Create Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-8 max-w-[800px] w-full">
-            <h2 className="text-xl font-bold mb-4">
-              {editingClient ? 'Edit Client' : 'Add New Client'}
-            </h2>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* First Column */}
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Tax Type</label>
-                    <select
-                      value={formData.tax_type}
-                      onChange={(e) => setFormData({ ...formData, tax_type: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    >
-                      <option value="">Select Tax Type</option>
-                      <option value="VAT">VAT</option>
-                      <option value="SSN">SSN</option>
-                      <option value="EIN">EIN</option>
-                      <option value="TIN">TIN</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Second Column */}
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Company Name</label>
-                    <input
-                      type="text"
-                      value={formData.company_name}
-                      onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Phone Number</label>
-                    <input
-                      type="tel"
-                      value={formData.phone_number}
-                      onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="+1 (123) 456-7890"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Tax Number</label>
-                    <input
-                      type="text"
-                      value={formData.tax_number}
-                      onChange={(e) => setFormData({ ...formData, tax_number: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Currency Selector - Full Width */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Currency *</label>
-                <select
-                  required
-                  value={formData.currency}
-                  onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-
-                  <option value="$">$ (Dollar)</option>
-                  <option value="€">€ (Euro)</option>
-                  <option value="₹">₹ (Rupee)</option>
-                  <option value="£">£ (Pound)</option>
-                </select>
-              </div>
-
-              {/* Full Width Address Field */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Address</label>
-                <textarea
-                  rows={3}
-                  value={formData.client_address}
-                  onChange={(e) => setFormData({ ...formData, client_address: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Street Address&#10;City, State/Province&#10;Country, Postal Code"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 mt-8">
+        {/* View Details Modal */}
+        {isViewModalOpen && viewingClient && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+            <div className="bg-white rounded-lg p-8 max-w-md w-full">
+              <div className="flex justify-between items-start mb-6">
+                <h2 className="text-xl font-bold">Client Details</h2>
                 <button
-                  type="button"
                   onClick={() => {
-                    setIsModalOpen(false);
-                    setEditingClient(null);
-                    setFormData({
-                      name: '',
-                      company_name: '',
-                      email: '',
-                      client_address: '',
-                      tax_number: '',
-                      tax_type: '',
-                      phone_number: '',
-                      currency: '$'
-                    });
+                    setIsViewModalOpen(false);
+                    setViewingClient(null);
                   }}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  className="text-gray-500 hover:text-gray-700"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? 'Saving...' : editingClient ? 'Update Client' : 'Create Client'}
+                  ×
                 </button>
               </div>
-            </form>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Name</label>
+                  <p className="mt-1 text-gray-900">{viewingClient.name}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Company</label>
+                  <p className="mt-1 text-gray-900">{viewingClient.company_name || '-'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Address</label>
+                  <p className="mt-1 text-gray-900 whitespace-pre-line">
+                    {viewingClient.client_address}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Tax Information</label>
+                  <p className="mt-1 text-gray-900">
+                    {viewingClient.tax_type}: {viewingClient.tax_number}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Email</label>
+                  <p className="mt-1 text-gray-900">{viewingClient.email}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Created</label>
+                  <p className="mt-1 text-gray-900">
+                    {format(new Date(viewingClient.created_at), 'MMM d, yyyy')}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setViewingClient(null);
+                    setIsViewModalOpen(false);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingClient(viewingClient);
+                    setFormData({
+                      name: viewingClient.name,
+                      company_name: viewingClient.company_name,
+                      email: viewingClient.email,
+                      client_address: viewingClient.client_address,
+                      tax_number: viewingClient.tax_number,
+                      tax_type: viewingClient.tax_type,
+                      phone_number: viewingClient.phone_number,
+                      currency: viewingClient.currency
+                    });
+                    setIsViewModalOpen(false);
+                    setIsModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Edit
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Edit/Create Modal */}
+        {isModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+            <div className="bg-white rounded-lg p-8 max-w-[800px] w-full">
+              <h2 className="text-xl font-bold mb-4">
+                {editingClient ? 'Edit Client' : 'Add New Client'}
+              </h2>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* First Column */}
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Email</label>
+                      <input
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Tax Type</label>
+                      <select
+                        value={formData.tax_type}
+                        onChange={(e) => setFormData({ ...formData, tax_type: e.target.value })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      >
+                        <option value="">Select Tax Type</option>
+                        <option value="VAT">VAT</option>
+                        <option value="SSN">SSN</option>
+                        <option value="EIN">EIN</option>
+                        <option value="TIN">TIN</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Second Column */}
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Company Name</label>
+                      <input
+                        type="text"
+                        value={formData.company_name}
+                        onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Phone Number</label>
+                      <input
+                        type="tel"
+                        value={formData.phone_number}
+                        onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        placeholder="+1 (123) 456-7890"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Tax Number</label>
+                      <input
+                        type="text"
+                        value={formData.tax_number}
+                        onChange={(e) => setFormData({ ...formData, tax_number: e.target.value })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Currency Selector - Full Width */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Currency *</label>
+                  <select
+                    required
+                    value={formData.currency}
+                    onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  >
+                    <option value="$">$ (Dollar)</option>
+                    <option value="€">€ (Euro)</option>
+                    <option value="₹">₹ (Rupee)</option>
+                    <option value="£">£ (Pound)</option>
+                  </select>
+                </div>
+
+                {/* Full Width Address Field */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Address</label>
+                  <textarea
+                    rows={3}
+                    value={formData.client_address}
+                    onChange={(e) => setFormData({ ...formData, client_address: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="Street Address&#10;City, State/Province&#10;Country, Postal Code"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex justify-end gap-3 mt-8">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsModalOpen(false);
+                      setEditingClient(null);
+                      setFormData({
+                        name: '',
+                        company_name: '',
+                        email: '',
+                        client_address: '',
+                        tax_number: '',
+                        tax_type: '',
+                        phone_number: '',
+                        currency: '$'
+                      });
+                    }}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? 'Saving...' : editingClient ? 'Update Client' : 'Create Client'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

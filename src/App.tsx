@@ -32,20 +32,17 @@ function Layout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
-      <Sidebar 
-        isOpen={isSidebarOpen} 
-        toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
-      />
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar */}
+      <div className="w-64 bg-white border-r border-gray-200">
+        <Sidebar />
+      </div>
 
-      {/* Main Content */}
-      <main className={`
-        flex-1 transition-all duration-300 ease-in-out
-        lg:ml-64 p-4 lg:p-8
-      `}>
-        {/* Add padding for mobile menu button */}
-        <div className="h-14 lg:h-0" />
-        {children}
+      {/* Main content with consistent padding */}
+      <main className="flex-1 px-24 py-12">  {/* Add consistent padding here */}
+        <div className="h-full">  {/* Container for page content */}
+          {children}
+        </div>
       </main>
     </div>
   );

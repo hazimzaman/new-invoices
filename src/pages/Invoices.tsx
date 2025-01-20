@@ -6,12 +6,15 @@ import { useAuth } from '../lib/auth';
 import { generateInvoicePDF } from '../services/generateInvoicePDF.tsx';
 import type { Settings } from '../types/settings';
 import { toast } from 'react-hot-toast';
-// import { sendInvoiceEmail } from '../services/emailService';
+import { sendInvoiceEmail } from '../services/emailService';
+import { ContextMenu } from '../components/ContextMenu';
 
 interface Client {
   id: string;
   name: string;
   company_name: string;
+  currency: string;
+  email: string;
 }
 
 interface InvoiceItem {
@@ -92,6 +95,8 @@ function Invoices() {
     content: ''
   });
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
+  const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
+  const [selectionMode, setSelectionMode] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -175,6 +180,12 @@ function Invoices() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!selectionMode) {
+      setSelectedInvoices([]);
+    }
+  }, [selectionMode]);
+
   async function fetchInvoices() {
     try {
       if (!initialLoadRef.current) {
@@ -185,7 +196,13 @@ function Invoices() {
         .from('invoices')
         .select(`
           *,
-          client:clients(id, name, company_name, email),
+          client:clients(
+            id, 
+            name, 
+            company_name, 
+            currency,
+            email
+          ),
           items:invoice_items(id, name, description, price)
         `)
         .eq('user_id', user?.id)
@@ -485,27 +502,39 @@ function Invoices() {
     }
   };
 
-  const handleSendEmail = async (invoice: Invoice, message?: string) => {
+  const handleSendEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedInvoice) return;
+
     try {
       setEmailLoading(true);
       
       // Generate PDF
-      const pdfBlob = await generateInvoicePDF(invoice, settings);
+      if (!settings) {
+        throw new Error('Settings not loaded');
+      }
+      const pdfBlob = await generateInvoicePDF(selectedInvoice, settings);
       
-      // Send email
+      // Send email with currency
       await sendInvoiceEmail({
-        to: invoice.client?.email || '',
-        invoiceNumber: invoice.invoice_number,
-        clientName: invoice.client?.name || 'Valued Customer',
-        amount: invoice.total,
+        to: emailForm.to,
+        invoiceNumber: selectedInvoice.invoice_number,
+        clientName: selectedInvoice.client?.name || 'Valued Customer',
+        amount: selectedInvoice.total,
+        currency: selectedInvoice.client?.currency || 'USD',
         pdfBlob: pdfBlob,
-        items: invoice.items,
-        customMessage: message
+        items: selectedInvoice.items,
+        customMessage: emailForm.content
       });
 
       setEmailModalOpen(false);
       setSelectedInvoice(null);
-      setCustomMessage('');
+      setEmailForm({
+        to: '',
+        subject: '',
+        content: ''
+      });
       toast.success('Invoice sent successfully');
     } catch (error) {
       console.error('Error sending invoice:', error);
@@ -519,7 +548,7 @@ function Invoices() {
     return content
       .replace(/{clientName}/g, invoice.client?.name || 'Valued Customer')
       .replace(/{invoiceNumber}/g, invoice.invoice_number)
-      .replace(/{amount}/g, `$${invoice.total.toFixed(2)}`);
+      .replace(/{amount}/g, formatCurrency(invoice.total, invoice.client?.currency || 'USD'));
   };
 
   const handleOpenEmailModal = async (invoice: Invoice) => {
@@ -571,8 +600,76 @@ function Invoices() {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  const formatCurrency = (amount: number, currency: string = '$') => {
+    // Use the exact currency strings from database
+    const currencySymbol = currency || '$';  // Default to $ if no currency specified
+    
+    // Format the number with 2 decimal places
+    const formattedAmount = amount.toFixed(2);
+    
+    // Place the currency symbol in the correct position
+    if (currencySymbol === 'RM' || currencySymbol === 'S$') {
+      return `${currencySymbol}${formattedAmount}`;
+    } else {
+      return `${currencySymbol}${formattedAmount}`;
+    }
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedInvoices(filteredInvoices.map(invoice => invoice.id));
+    } else {
+      setSelectedInvoices([]);
+    }
+  };
+
+  const handleSelectInvoice = (invoiceId: string) => {
+    setSelectedInvoices(prev => 
+      prev.includes(invoiceId) 
+        ? prev.filter(id => id !== invoiceId)
+        : [...prev, invoiceId]
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedInvoices.length) return;
+
+    if (window.confirm(`Are you sure you want to delete ${selectedInvoices.length} invoice(s)?`)) {
+      try {
+        const { error } = await supabase
+          .from('invoices')
+          .delete()
+          .in('id', selectedInvoices);
+
+        if (error) throw error;
+
+        toast.success(`Successfully deleted ${selectedInvoices.length} invoice(s)`);
+        setSelectedInvoices([]);
+        fetchInvoices();
+      } catch (error) {
+        console.error('Error deleting invoices:', error);
+        toast.error('Failed to delete invoices');
+      }
+    }
+  };
+
+  const handleBulkDownload = async () => {
+    try {
+      for (const invoiceId of selectedInvoices) {
+        const invoice = invoices.find(inv => inv.id === invoiceId);
+        if (invoice) {
+          await handleDownloadPDF(invoice);
+        }
+      }
+      toast.success(`Downloaded ${selectedInvoices.length} invoice(s)`);
+    } catch (error) {
+      console.error('Error downloading invoices:', error);
+      toast.error('Failed to download some invoices');
+    }
+  };
+
   return (
-    <div className="p-6">
+    <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Invoices</h1>
         <div className="flex items-center gap-4">
@@ -733,30 +830,52 @@ function Invoices() {
         )}
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Add Bulk Actions */}
+      {selectionMode && selectedInvoices.length > 0 && (
+        <div className="mb-4 p-2 bg-gray-50 rounded-lg flex items-center justify-between">
+          <div className="text-sm text-gray-600">
+            {selectedInvoices.length} invoice(s) selected
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleBulkDownload}
+              className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
+            >
+              <Download className="w-4 h-4" />
+              Download
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              className="px-3 py-1 text-sm text-red-600 hover:text-red-800 flex items-center gap-1"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-lg shadow overflow-hidden no-select">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <span className="hidden sm:inline">Invoice #</span>
-                  <span className="sm:hidden">Info</span>
-                </th>
-                <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Client
-                </th>
-                <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Items
-                </th>
-                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                  Actions
-                </th>
+                {selectionMode && (
+                  <th className="px-3 py-2 text-left">
+                    <input
+                      type="checkbox"
+                      checked={selectedInvoices.length === filteredInvoices.length}
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300 can-select"
+                    />
+                  </th>
+                )}
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice #</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
+                <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
+                <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -793,25 +912,19 @@ function Invoices() {
               ) : (
                 filteredInvoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div>{invoice.invoice_number}</div>
-                        <div className="sm:hidden text-sm text-gray-500">
-                          {invoice.client?.name}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
-                      <div>
-                        {invoice.client?.name}
-                        {invoice.client?.company_name && (
-                          <span className="text-gray-500 text-sm block">
-                            {invoice.client.company_name}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="hidden lg:table-cell px-6 py-4">
+                    {selectionMode && (
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedInvoices.includes(invoice.id)}
+                          onChange={() => handleSelectInvoice(invoice.id)}
+                          className="rounded border-gray-300 can-select"
+                        />
+                      </td>
+                    )}
+                    <td className="px-3 py-2 whitespace-nowrap can-select">{invoice.invoice_number}</td>
+                    <td className="px-3 py-2 whitespace-nowrap no-select">{invoice.client?.name}</td>
+                    <td className="hidden lg:table-cell px-3 py-2">
                       <div className="max-w-xs">
                         {invoice.items && invoice.items.length > 0 ? (
                           <div className="text-sm text-gray-600 space-y-1">
@@ -824,123 +937,46 @@ function Invoices() {
                         )}
                       </div>
                     </td>
-                    <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap">
+                    <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap">
                       {format(new Date(invoice.created_at), 'MMM d, yyyy')}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      ${invoice.total.toFixed(2)}
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {formatCurrency(invoice.total, invoice.client?.currency || 'USD')}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap w-24">
-                      <div className="flex items-center justify-end space-x-2">
-                        <div className="hidden sm:flex space-x-2">
-                          <button
-                            onClick={() => {
+                    <td className="px-3 py-2 whitespace-nowrap w-24">
+                      <ContextMenu
+                        options={[
+                          {
+                            label: 'View',
+                            icon: <Eye className="w-4 h-4" />,
+                            onClick: () => {
                               setViewingInvoice(invoice);
                               setIsViewModalOpen(true);
-                            }}
-                            className="text-gray-600 hover:text-gray-800 p-1"
-                            title="View Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDownloadPDF(invoice)}
-                            className="text-gray-600 hover:text-gray-800 p-1"
-                            title="Download PDF"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleEdit(invoice)}
-                            className="text-blue-600 hover:text-primary-800 p-1"
-                            title="Edit"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(invoice.id)}
-                            className="text-red-600 hover:text-red-800 p-1"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenEmailModal(invoice)}
-                            className="text-gray-600 hover:text-gray-900 p-1"
-                            title="Send Email"
-                          >
-                            <Mail className="h-4 w-4" />
-                          </button>
-                        </div>
-
-                        <div className="sm:hidden">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveActionId(activeActionId === invoice.id ? null : invoice.id);
-                            }}
-                            className="text-gray-600 hover:text-gray-800 p-1"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-
-                          {activeActionId === invoice.id && (
-                            <div 
-                              className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <div className="py-1">
-                                <button
-                                  onClick={() => {
-                                    setViewingInvoice(invoice);
-                                    setIsViewModalOpen(true);
-                                    setActiveActionId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                                >
-                                  <Eye className="w-4 h-4 mr-3" /> View Details
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleDownloadPDF(invoice);
-                                    setActiveActionId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                                >
-                                  <Download className="w-4 h-4 mr-3" /> Download PDF
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleEdit(invoice);
-                                    setActiveActionId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                                >
-                                  <Edit2 className="w-4 h-4 mr-3" /> Edit
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleDelete(invoice.id);
-                                    setActiveActionId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                                >
-                                  <Trash2 className="w-4 h-4 mr-3" /> Delete
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleOpenEmailModal(invoice);
-                                    setActiveActionId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                                >
-                                  <Mail className="w-4 h-4 mr-3" /> Send Email
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                            }
+                          },
+                          {
+                            label: 'Edit',
+                            icon: <Edit2 className="w-4 h-4" />,
+                            onClick: () => handleEdit(invoice)
+                          },
+                          {
+                            label: 'Download',
+                            icon: <Download className="w-4 h-4" />,
+                            onClick: () => handleDownloadPDF(invoice)
+                          },
+                          {
+                            label: 'Send Email',
+                            icon: <Mail className="w-4 h-4" />,
+                            onClick: () => handleOpenEmailModal(invoice)
+                          },
+                          {
+                            label: 'Delete',
+                            icon: <Trash2 className="w-4 h-4" />,
+                            onClick: () => handleDelete(invoice.id),
+                            className: 'text-red-600 hover:text-red-700'
+                          }
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))
@@ -1170,7 +1206,7 @@ function Invoices() {
                 <div>
                   <label className="block text-sm font-medium text-gray-500">Total Amount</label>
                   <p className="mt-1 text-gray-900">
-                    ${viewingInvoice.total.toFixed(2)}
+                    {formatCurrency(viewingInvoice.total, viewingInvoice.client?.currency || 'USD')}
                   </p>
                 </div>
               </div>
@@ -1193,7 +1229,9 @@ function Invoices() {
                           <tr key={item.id || index}>
                             <td className="px-4 py-2 text-sm text-gray-900">{item.name}</td>
                             <td className="px-4 py-2 text-sm text-gray-500">{item.description}</td>
-                            <td className="px-4 py-2 text-sm text-gray-900 text-right">${item.price.toFixed(2)}</td>
+                            <td className="px-4 py-2 text-sm text-gray-900 text-right">
+                              {formatCurrency(item.price, viewingInvoice.client?.currency || 'USD')}
+                            </td>
                           </tr>
                         ))
                       ) : (
@@ -1252,7 +1290,7 @@ function Invoices() {
               </button>
             </div>
 
-            <form className="space-y-4">
+            <form onSubmit={handleSendEmail} className="space-y-4">
               {/* Send To Field */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1315,14 +1353,23 @@ function Invoices() {
                     setSelectedInvoice(null);
                   }}
                   className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-800"
+                  disabled={emailLoading}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center"
+                  disabled={emailLoading}
                 >
-                  Send Invoice
+                  {emailLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    'Send Invoice'
+                  )}
                 </button>
               </div>
             </form>
