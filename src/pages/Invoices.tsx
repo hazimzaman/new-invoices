@@ -49,6 +49,12 @@ interface FilterState {
   sortOrder: 'asc' | 'desc';
 }
 
+interface BusinessSettings {
+  logo_url: string | null;
+  business_name: string | null;
+  // ... other settings fields
+}
+
 function Invoices() {
   const { user } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -64,7 +70,7 @@ function Invoices() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<BusinessSettings | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
     client: '',
@@ -109,8 +115,7 @@ function Invoices() {
         setIsLoading(true);
         await Promise.all([
           fetchInvoices(),
-          fetchClients(),
-          fetchSettings()
+          fetchClients()
         ]);
         initialLoadRef.current = true;
       } catch (error) {
@@ -187,6 +192,27 @@ function Invoices() {
     }
   }, [selectionMode]);
 
+  useEffect(() => {
+    const fetchSettings = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('business_settings')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        if (error) throw error;
+        setSettings(data);
+      } catch (error) {
+        console.error('Error fetching settings:', error);
+      }
+    };
+
+    fetchSettings();
+  }, [user?.id]);
+
   async function fetchInvoices() {
     try {
       if (!initialLoadRef.current) {
@@ -232,21 +258,6 @@ function Invoices() {
     } catch (error) {
       console.error('Error fetching clients:', error);
       toast.error('Failed to fetch clients. Please try again.');
-    }
-  }
-
-  async function fetchSettings() {
-    try {
-      const { data, error } = await supabase
-        .from('business_settings')
-        .select('*')
-        .single();
-
-      if (error) throw error;
-      setSettings(data);
-    } catch (error) {
-      console.error('Error fetching settings:', error);
-      toast.error('Failed to fetch business settings. Please try again.');
     }
   }
 
@@ -482,7 +493,8 @@ function Invoices() {
   const handleDownloadPDF = async (invoice: Invoice) => {
     try {
       if (!settings) {
-        throw new Error('Settings not loaded');
+        toast.error('Business settings not loaded');
+        return;
       }
 
       const pdfBlob = await generateInvoicePDF(invoice, settings);

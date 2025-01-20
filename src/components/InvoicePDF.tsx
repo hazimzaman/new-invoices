@@ -87,10 +87,11 @@ const styles = StyleSheet.create({
     marginBottom:15,
   },
   companyLogo: {
-    width: 64,
-    height: 64,
+    width: 'auto',
+    height: 60,
     marginBottom: 8,
     marginLeft: 'auto',
+    objectFit: 'contain',
   },
   companyName: {
     fontSize: 15,
@@ -242,7 +243,7 @@ export const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, settings }) => 
           <View style={styles.header}>
             <Text style={styles.invoiceTitle}>INVOICE</Text>
             <View style={styles.companyInfo}>
-              <Image style={styles.companyLogo} src={logo} />
+              <Image style={styles.companyLogo} src={settings.logo_url} />
               <Text style={styles.companyName}>{settings.business_name}</Text>
               <Text style={styles.contactName}>{settings.contact_name}</Text>
               <Text style={styles.companyDetail}>{settings.contact_phone}</Text>

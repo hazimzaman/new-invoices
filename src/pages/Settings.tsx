@@ -152,80 +152,64 @@ function Settings() {
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     
-    // Check authentication
-    const session = await supabase.auth.getSession();
-    const isAuthenticated = !!session.data.session;
-
     if (!file) {
       toast.error('Please select a file to upload');
       return;
     }
 
-    // Check file type
-    const fileExt = file.name.split('.').pop()?.toLowerCase();
-    if (fileExt !== 'jpg') {
-      toast.error('Only JPG files are allowed');
+    // Check file size (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size must be less than 5MB');
       return;
     }
 
     const uploadPromise = new Promise(async (resolve, reject) => {
       try {
-        const timestamp = new Date().getTime();
-        // Use the appropriate folder based on authentication status
-        const folderPrefix = isAuthenticated ? '1peuqw_1' : '1peuqw_1';
-        const fileName = `${folderPrefix}/logo-${timestamp}.jpg`;
+        if (!user?.id) throw new Error('User not authenticated');
+
+        // Generate unique filename in logos/private folder
+        const fileExt = file.name.split('.').pop();
+        const fileName = `private/${user.id}-${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+
+        // Delete old logo if exists
+        if (settings?.logo_url) {
+          const oldPath = new URL(settings.logo_url).pathname.split('/logos/').pop();
+          if (oldPath) {
+            await supabase.storage
+              .from('logos')
+              .remove([oldPath]);
+          }
+        }
 
         // Upload to Supabase storage
         const { data, error } = await supabase.storage
           .from('logos')
           .upload(fileName, file, {
-            upsert: true,
-            cacheControl: '3600'
+            cacheControl: '3600',
+            upsert: false
           });
 
-        if (error) {
-          console.error('Upload error:', error);
-          throw error;
-        }
+        if (error) throw error;
 
-        // Get URL based on authentication status
-        let fileUrl;
-        if (isAuthenticated) {
-          const { data: { signedUrl } } = await supabase.storage
-            .from('logos')
-            .createSignedUrl(data.path, 31536000); // 1 year expiry
-          fileUrl = signedUrl;
-        } else {
-          const { data: { publicUrl } } = supabase.storage
-            .from('logos')
-            .getPublicUrl(data.path);
-          fileUrl = publicUrl;
-        }
+        // Get signed URL for the uploaded file
+        const { data: { signedUrl } } = await supabase.storage
+          .from('logos')
+          .createSignedUrl(fileName, 31536000); // 1 year expiry
 
-        if (!fileUrl) throw new Error('Failed to generate URL');
+        if (!signedUrl) throw new Error('Failed to generate signed URL');
 
         // Update settings with new logo URL
-        if (isAuthenticated) {
-          const { error: updateError } = await supabase
-            .from('business_settings')
-            .update({ logo_url: fileUrl })
-            .eq('user_id', session.data.session!.user.id);
+        const { error: updateError } = await supabase
+          .from('business_settings')
+          .update({ logo_url: signedUrl })
+          .eq('user_id', user.id);
 
-          if (updateError) throw updateError;
-        }
+        if (updateError) throw updateError;
 
         setSettings(prev => ({
           ...prev,
-          logo_url: fileUrl
+          logo_url: signedUrl
         }));
-
-        // Clean up old file if exists in the appropriate folder
-        if (settings.logo_url) {
-          const oldPath = settings.logo_url.split('/').slice(-2).join('/');
-          await supabase.storage
-            .from('logos')
-            .remove([oldPath]);
-        }
 
         resolve('Logo uploaded successfully!');
       } catch (error) {
@@ -241,32 +225,70 @@ function Settings() {
     });
   };
 
-  // Function to refresh signed URLs for authenticated users
+  const handleLogoRemove = async () => {
+    if (!settings?.logo_url) return;
+
+    try {
+      // Extract filename from signed URL
+      const path = new URL(settings.logo_url).pathname.split('/logos/').pop();
+      if (!path) throw new Error('Invalid logo URL');
+
+      // Remove from storage
+      const { error: storageError } = await supabase.storage
+        .from('logos')
+        .remove([path]);
+
+      if (storageError) throw storageError;
+
+      // Update settings in database
+      const { error: dbError } = await supabase
+        .from('business_settings')
+        .update({ logo_url: null })
+        .eq('user_id', user?.id);
+
+      if (dbError) throw dbError;
+
+      setSettings(prev => ({
+        ...prev,
+        logo_url: null
+      }));
+
+      toast.success('Logo removed successfully');
+    } catch (error) {
+      console.error('Error removing logo:', error);
+      toast.error('Failed to remove logo');
+    }
+  };
+
+  // Function to refresh signed URLs
   const refreshSignedUrl = async (path: string) => {
-    const session = await supabase.auth.getSession();
-    if (session.data.session) {
+    try {
       const { data: { signedUrl } } = await supabase.storage
         .from('logos')
-        .createSignedUrl(path, 31536000);
+        .createSignedUrl(path, 31536000); // 1 year expiry
       return signedUrl;
+    } catch (error) {
+      console.error('Error refreshing signed URL:', error);
+      return null;
     }
-    return null;
   };
 
   // Add this to your useEffect to refresh the URL when component mounts
   useEffect(() => {
-    if (settings.logo_url) {
-      const path = settings.logo_url.split('/').slice(-2).join('/');
-      refreshSignedUrl(path).then(newUrl => {
-        if (newUrl) {
-          setSettings(prev => ({
-            ...prev,
-            logo_url: newUrl
-          }));
-        }
-      });
+    if (settings?.logo_url) {
+      const path = new URL(settings.logo_url).pathname.split('/logos/').pop();
+      if (path) {
+        refreshSignedUrl(path).then(newUrl => {
+          if (newUrl) {
+            setSettings(prev => ({
+              ...prev,
+              logo_url: newUrl
+            }));
+          }
+        });
+      }
     }
-  }, []);
+  }, [settings?.logo_url]);
 
   if (isLoading) {
     return (
@@ -313,25 +335,7 @@ function Settings() {
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          setSettings(prev => {
-                            if (!prev) return prev;
-                            return { ...prev, logo_url: null };
-                          });
-                          // Also delete from storage if needed
-                          if (user?.id) {
-                            toast.promise(
-                              supabase.storage
-                                .from('logos')
-                                .remove([`${user.id}/logo.${settings.logo_url?.split('.').pop()}`]),
-                              {
-                                loading: 'Removing logo...',
-                                success: 'Logo removed successfully',
-                                error: 'Failed to remove logo'
-                              }
-                            );
-                          }
-                        }}
+                        onClick={handleLogoRemove}
                         className="px-3 py-1 text-sm text-red-600 hover:text-red-800 border border-red-200 hover:border-red-300 rounded-md"
                       >
                         Remove
@@ -358,7 +362,7 @@ function Settings() {
                         <p className="mb-2 text-sm text-gray-500">
                           <span className="font-semibold">Click to upload</span> or drag and drop
                         </p>
-                        <p className="text-xs text-gray-500">PNG, JPG, GIF up to 5MB</p>
+                        <p className="text-xs text-gray-500">JPEG, PNG, GIF, WebP up to 5MB</p>
                       </div>
                       <input
                         type="file"
