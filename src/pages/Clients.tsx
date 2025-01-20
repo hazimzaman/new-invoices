@@ -495,109 +495,73 @@ function Clients() {
           </div>
         )}
 
-        <div className="flex-1 bg-white rounded-lg shadow overflow-hidden min-h-0 no-select">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
+        <div className="flex-1 bg-white rounded-lg shadow">
+          <table className="min-w-full">
+            <thead>
+              <tr className="border-b border-gray-200">
+                {selectionMode && (
+                  <th scope="col" className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedClients.length === filteredClients.length}
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300 can-select"
+                    />
+                  </th>
+                )}
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Currency</th>
+                <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {filteredClients.map((client) => (
+                <tr key={client.id} className="hover:bg-gray-50">
                   {selectionMode && (
-                    <th className="px-3 py-2 text-left">
+                    <td className="w-10 px-4 py-3">
                       <input
                         type="checkbox"
-                        checked={selectedClients.length === filteredClients.length}
-                        onChange={handleSelectAll}
+                        checked={selectedClients.includes(client.id)}
+                        onChange={() => handleSelectClient(client.id)}
                         className="rounded border-gray-300 can-select"
                       />
-                    </th>
+                    </td>
                   )}
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                  <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                  <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                  <th className="hidden sm:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Currency</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <td className="px-4 py-3 text-sm text-gray-900">{client.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{client.company_name || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{format(new Date(client.created_at), 'MMM d, yyyy')}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900 text-center">{client.currency || '$'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end space-x-2">
+                      <button
+                        onClick={() => {
+                          setViewingClient(client);
+                          setIsViewModalOpen(true);
+                        }}
+                        className="text-gray-600 hover:text-gray-900"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleEdit(client)}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(client.id)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-4">
-                      <div className="flex justify-center">
-                        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-                      </div>
-                    </td>
-                  </tr>
-                ) : clients.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-center py-12">
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No clients found</h3>
-                        <p className="text-gray-500 mb-6">Get started by adding your first client</p>
-                        <button
-                          onClick={() => {
-                            setEditingClient(null);
-                            setIsModalOpen(true);
-                          }}
-                          className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center mx-auto"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          Create First Client
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredClients.map((client) => (
-                    <tr key={client.id} className="hover:bg-gray-50">
-                      {selectionMode && (
-                        <td className="px-3 py-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedClients.includes(client.id)}
-                            onChange={() => handleSelectClient(client.id)}
-                            className="rounded border-gray-300 can-select"
-                          />
-                        </td>
-                      )}
-                      <td className="px-3 py-2 can-select">{client.name}</td>
-                      <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap no-select">{client.company_name || '-'}</td>
-                      <td className="hidden lg:table-cell px-3 py-2 whitespace-nowrap">
-                        {format(new Date(client.created_at), 'MMM d, yyyy')}
-                      </td>
-                      <td className="hidden sm:table-cell px-3 py-2 whitespace-nowrap">{client.currency || '$'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div className="flex space-x-3">
-                          <button
-                            onClick={() => {
-                              setViewingClient(client);
-                              setIsViewModalOpen(true);
-                            }}
-                            className="text-gray-600 hover:text-gray-800"
-                            title="View Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleEdit(client)}
-                            className="text-blue-600 hover:text-blue-800"
-                            title="Edit"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(client.id)}
-                            className="text-red-600 hover:text-red-800"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
 
         {/* View Details Modal */}

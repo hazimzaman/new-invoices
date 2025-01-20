@@ -855,135 +855,87 @@ function Invoices() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden no-select">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
+      <div className="bg-white rounded-lg shadow">
+        <table className="min-w-full">
+          <thead>
+            <tr className="border-b border-gray-200">
+              {selectionMode && (
+                <th scope="col" className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedInvoices.length === filteredInvoices.length}
+                    onChange={handleSelectAll}
+                    className="rounded border-gray-300 can-select"
+                  />
+                </th>
+              )}
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice #</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+              <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+              <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {filteredInvoices.map((invoice) => (
+              <tr key={invoice.id} className="hover:bg-gray-50">
                 {selectionMode && (
-                  <th className="px-3 py-2 text-left">
+                  <td className="w-10 px-4 py-3">
                     <input
                       type="checkbox"
-                      checked={selectedInvoices.length === filteredInvoices.length}
-                      onChange={handleSelectAll}
+                      checked={selectedInvoices.includes(invoice.id)}
+                      onChange={() => handleSelectInvoice(invoice.id)}
                       className="rounded border-gray-300 can-select"
                     />
-                  </th>
+                  </td>
                 )}
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice #</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
-                <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
-                <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <td className="px-4 py-3 text-sm text-gray-900">{invoice.invoice_number}</td>
+                <td className="px-4 py-3 text-sm text-gray-900">{invoice.client?.name}</td>
+                <td className="px-4 py-3 text-sm text-gray-500">{invoice.items?.[0]?.name}</td>
+                <td className="px-4 py-3 text-sm text-gray-500">{format(new Date(invoice.created_at), 'MMM d, yyyy')}</td>
+                <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(invoice.total, invoice.client?.currency)}</td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex items-center justify-end space-x-2">
+                    <button
+                      onClick={() => {
+                        setViewingInvoice(invoice);
+                        setIsViewModalOpen(true);
+                      }}
+                      className="text-gray-600 hover:text-gray-900"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleEdit(invoice)}
+                      className="text-blue-600 hover:text-blue-900"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDownloadPDF(invoice)}
+                      className="text-gray-600 hover:text-gray-900"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleOpenEmailModal(invoice)}
+                      className="text-gray-600 hover:text-gray-900"
+                    >
+                      <Mail className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(invoice.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center justify-center min-h-[200px]">
-                      <div className="flex flex-col items-center gap-2">
-                        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                        <p className="text-gray-600">Loading invoices...</p>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              ) : invoices.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-center py-12">
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">No invoices found</h3>
-                      <p className="text-gray-500 mb-6">Get started by creating your first invoice</p>
-                      <button
-                        onClick={() => {
-                          setEditingInvoice(null);
-                          setIsModalOpen(true);
-                        }}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center mx-auto"
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Create First Invoice
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredInvoices.map((invoice) => (
-                  <tr key={invoice.id} className="hover:bg-gray-50">
-                    {selectionMode && (
-                      <td className="px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedInvoices.includes(invoice.id)}
-                          onChange={() => handleSelectInvoice(invoice.id)}
-                          className="rounded border-gray-300 can-select"
-                        />
-                      </td>
-                    )}
-                    <td className="px-3 py-2 whitespace-nowrap can-select">{invoice.invoice_number}</td>
-                    <td className="px-3 py-2 whitespace-nowrap no-select">{invoice.client?.name}</td>
-                    <td className="hidden lg:table-cell px-3 py-2">
-                      <div className="max-w-xs">
-                        {invoice.items && invoice.items.length > 0 ? (
-                          <div className="text-sm text-gray-600 space-y-1">
-                            {invoice.items.map((item, index) => (
-                              <div key={index}>{item.name}</div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">No items</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap">
-                      {format(new Date(invoice.created_at), 'MMM d, yyyy')}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatCurrency(invoice.total, invoice.client?.currency || 'USD')}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap w-24">
-                      <ContextMenu
-                        options={[
-                          {
-                            label: 'View',
-                            icon: <Eye className="w-4 h-4" />,
-                            onClick: () => {
-                              setViewingInvoice(invoice);
-                              setIsViewModalOpen(true);
-                            }
-                          },
-                          {
-                            label: 'Edit',
-                            icon: <Edit2 className="w-4 h-4" />,
-                            onClick: () => handleEdit(invoice)
-                          },
-                          {
-                            label: 'Download',
-                            icon: <Download className="w-4 h-4" />,
-                            onClick: () => handleDownloadPDF(invoice)
-                          },
-                          {
-                            label: 'Send Email',
-                            icon: <Mail className="w-4 h-4" />,
-                            onClick: () => handleOpenEmailModal(invoice)
-                          },
-                          {
-                            label: 'Delete',
-                            icon: <Trash2 className="w-4 h-4" />,
-                            onClick: () => handleDelete(invoice.id),
-                            className: 'text-red-600 hover:text-red-700'
-                          }
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Create/Edit Invoice Modal */}

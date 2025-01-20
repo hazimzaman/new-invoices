@@ -39,7 +39,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Main content with consistent padding */}
-      <main className="flex-1 px-24 py-12">  {/* Add consistent padding here */}
+      <main className="flex-1 px-24 py-12">  {/* Reduced padding */}
         <div className="h-full">  {/* Container for page content */}
           {children}
         </div>
