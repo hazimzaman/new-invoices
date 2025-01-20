@@ -97,6 +97,7 @@ function Invoices() {
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedClientCurrency, setSelectedClientCurrency] = useState<string>('');
 
   useEffect(() => {
     let mounted = true;
@@ -223,7 +224,7 @@ function Invoices() {
     try {
       const { data, error } = await supabase
         .from('clients')
-        .select('id, name, company_name')
+        .select('id, name, company_name, currency')
         .eq('user_id', user?.id);
 
       if (error) throw error;
@@ -258,9 +259,30 @@ function Invoices() {
     return prefix ? `${prefix}${nextNumber}` : `${nextNumber}`;
   };
 
+  const calculateTotal = () => {
+    return items.reduce((sum, item) => {
+      const price = parseFloat(item.price) || 0;
+      return sum + price;
+    }, 0);
+  };
+
+  const handleItemChange = (index: number, field: string, value: string) => {
+    const newItems = [...items];
+    newItems[index] = {
+      ...newItems[index],
+      [field]: value
+    };
+    setItems(newItems);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    const itemsWithNumericPrices = items.map(item => ({
+      ...item,
+      price: parseFloat(item.price) || 0
+    }));
+
     try {
       setIsSubmitting(true);
       
@@ -278,7 +300,7 @@ function Invoices() {
           .from('invoices')
           .update({
             client_id: selectedClient,
-            total: items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0),
+            total: itemsWithNumericPrices.reduce((sum, item) => sum + item.price, 0),
             user_id: user.id
           })
           .eq('id', editingInvoice.id);
@@ -296,11 +318,11 @@ function Invoices() {
         // Create new items
         const { error: itemsError } = await supabase
           .from('invoice_items')
-          .insert(items.map(item => ({
+          .insert(itemsWithNumericPrices.map(item => ({
             invoice_id: editingInvoice.id,
             name: item.name,
             description: item.description,
-            price: parseFloat(item.price),
+            price: item.price,
             user_id: user.id
           })));
 
@@ -317,7 +339,7 @@ function Invoices() {
           .insert([{
             client_id: selectedClient,
             invoice_number: invoiceNumber,
-            total: items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0),
+            total: itemsWithNumericPrices.reduce((sum, item) => sum + item.price, 0),
             user_id: user.id,
             created_at: new Date().toISOString()
           }])
@@ -341,11 +363,11 @@ function Invoices() {
         // Create items
         const { error: itemsError } = await supabase
           .from('invoice_items')
-          .insert(items.map(item => ({
+          .insert(itemsWithNumericPrices.map(item => ({
             invoice_id: invoiceData.id,
             name: item.name,
             description: item.description,
-            price: parseFloat(item.price),
+            price: item.price,
             user_id: user.id
           })));
 
@@ -668,6 +690,14 @@ function Invoices() {
     }
   };
 
+  const handleClientChange = (clientId: string) => {
+    setSelectedClient(clientId);
+    const client = clients.find(c => c.id === clientId);
+    if (client) {
+      setSelectedClientCurrency(client.currency || '$');
+    }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -941,38 +971,40 @@ function Invoices() {
       {/* Create/Edit Invoice Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
-            <button
-              onClick={() => {
-                setIsModalOpen(false);
-                resetForm();
-              }}
-              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-xl"
-            >
-              ×
-            </button>
-
-            <h2 className="text-xl font-bold mb-6">
-              {editingInvoice ? 'Edit Invoice' : 'Create New Invoice'}
-            </h2>
+          <div className="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-6">
+              <h2 className="text-xl font-bold">
+                {editingInvoice ? 'Edit Invoice' : 'Create New Invoice'}
+              </h2>
+              <button
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingInvoice(null);
+                  setItems([{ name: '', description: '', price: '' }]);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Client Selection */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Client
+                  Client *
                 </label>
                 <select
                   required
                   value={selectedClient}
-                  onChange={(e) => setSelectedClient(e.target.value)}
+                  onChange={(e) => handleClientChange(e.target.value)}
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                   disabled={isSubmitting}
                 >
                   <option value="">Select a client</option>
                   {clients.map((client) => (
                     <option key={client.id} value={client.id}>
-                      {client.name} - {client.company_name}
+                      {client.name} {client.company_name ? `- ${client.company_name}` : ''}
                     </option>
                   ))}
                 </select>
@@ -984,15 +1016,15 @@ function Invoices() {
                   <h3 className="text-lg font-medium">Items</h3>
                   <button
                     type="button"
-                    onClick={addItem}
-                    className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                    onClick={() => setItems([...items, { name: '', description: '', price: '' }])}
+                    className="text-blue-600 hover:text-blue-700 flex items-center gap-1"
                   >
-                    Add Item
+                    <Plus className="h-4 w-4" /> Add Item
                   </button>
                 </div>
-                
+
                 {items.map((item, index) => (
-                  <div key={index} className="p-4 border rounded-lg space-y-3">
+                  <div key={index} className="p-4 border rounded-lg space-y-4">
                     <div className="flex justify-between items-start">
                       <h4 className="text-sm font-medium">Item {index + 1}</h4>
                       {items.length > 1 && (
@@ -1005,7 +1037,7 @@ function Invoices() {
                         </button>
                       )}
                     </div>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Name *</label>
@@ -1013,41 +1045,31 @@ function Invoices() {
                           required
                           type="text"
                           value={item.name}
-                          onChange={(e) => {
-                            const newItems = [...items];
-                            newItems[index].name = e.target.value;
-                            setItems(newItems);
-                          }}
+                          onChange={(e) => handleItemChange(index, 'name', e.target.value)}
                           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                         />
                       </div>
-                      
+
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">Price *</label>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Price ({selectedClientCurrency || '$'}) *
+                        </label>
                         <input
                           required
                           type="number"
-                          step="0.01"
                           min="0"
+                          step="0.01"
                           value={item.price}
-                          onChange={(e) => {
-                            const newItems = [...items];
-                            newItems[index].price = e.target.value;
-                            setItems(newItems);
-                          }}
+                          onChange={(e) => handleItemChange(index, 'price', e.target.value)}
                           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                         />
                       </div>
-                      
+
                       <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700">Description</label>
                         <textarea
                           value={item.description}
-                          onChange={(e) => {
-                            const newItems = [...items];
-                            newItems[index].description = e.target.value;
-                            setItems(newItems);
-                          }}
+                          onChange={(e) => handleItemChange(index, 'description', e.target.value)}
                           rows={2}
                           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                         />
@@ -1062,18 +1084,19 @@ function Invoices() {
                 <div className="text-right">
                   <span className="text-sm font-medium text-gray-700">Total: </span>
                   <span className="text-lg font-bold">
-                    ${items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0).toFixed(2)}
+                    {formatCurrency(calculateTotal(), selectedClientCurrency || '$')}
                   </span>
                 </div>
               </div>
 
-              {/* Submit Button */}
+              {/* Action Buttons */}
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => {
                     setIsModalOpen(false);
-                    resetForm();
+                    setEditingInvoice(null);
+                    setItems([{ name: '', description: '', price: '' }]);
                   }}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                   disabled={isSubmitting}
@@ -1082,34 +1105,12 @@ function Invoices() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   disabled={isSubmitting}
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Processing...
-                    </>
-                  ) : editingInvoice ? (
-                    'Update Invoice'
-                  ) : (
-                    'Create Invoice'
-                  )}
+                  {isSubmitting ? 'Saving...' : editingInvoice ? 'Update Invoice' : 'Create Invoice'}
                 </button>
               </div>
-
-              {/* Status Messages */}
-              {submitStatus.message && (
-                <div 
-                  className={`mt-4 p-4 rounded-lg ${
-                    submitStatus.type === 'success' ? 'bg-green-50 text-green-700' :
-                    submitStatus.type === 'error' ? 'bg-red-50 text-red-700' :
-                    'bg-blue-50 text-blue-700'
-                  }`}
-                >
-                  {submitStatus.message}
-                </div>
-              )}
             </form>
           </div>
         </div>
@@ -1117,8 +1118,8 @@ function Invoices() {
 
       {/* View Invoice Modal */}
       {isViewModalOpen && viewingInvoice && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl">
             <div className="flex justify-between items-start mb-6">
               <h2 className="text-xl font-bold">Invoice Details</h2>
               <button
@@ -1158,7 +1159,7 @@ function Invoices() {
                 <div>
                   <label className="block text-sm font-medium text-gray-500">Total Amount</label>
                   <p className="mt-1 text-gray-900">
-                    {formatCurrency(viewingInvoice.total, viewingInvoice.client?.currency || 'USD')}
+                    {formatCurrency(viewingInvoice.total, viewingInvoice.client?.currency)}
                   </p>
                 </div>
               </div>
@@ -1182,7 +1183,7 @@ function Invoices() {
                             <td className="px-4 py-2 text-sm text-gray-900">{item.name}</td>
                             <td className="px-4 py-2 text-sm text-gray-500">{item.description}</td>
                             <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                              {formatCurrency(item.price, viewingInvoice.client?.currency || 'USD')}
+                              {formatCurrency(item.price, viewingInvoice.client?.currency)}
                             </td>
                           </tr>
                         ))
