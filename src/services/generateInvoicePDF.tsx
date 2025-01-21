@@ -30,7 +30,7 @@ interface BusinessSettings {
   // ... other settings fields
 }
 
-export const generateInvoicePDF = async (invoice: Invoice, settings: BusinessSettings) => {
+export async function generateInvoicePDF(invoice: Invoice, settings: BusinessSettings): Promise<Blob> {
   if (!invoice || !settings) {
     throw new Error('Invoice or settings data is missing');
   }
@@ -78,7 +78,7 @@ export const generateInvoicePDF = async (invoice: Invoice, settings: BusinessSet
     const blob = await pdf(document).toBlob();
     return blob;
   } catch (error) {
-    console.error('Error generating PDF:', error);
-    throw new Error(`Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Error in generateInvoicePDF:', error);
+    throw error;
   }
-}; 
+} 

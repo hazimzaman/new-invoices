@@ -106,6 +106,7 @@ function Invoices() {
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedClientCurrency, setSelectedClientCurrency] = useState<string>('');
+  const [downloadingInvoices, setDownloadingInvoices] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let mounted = true;
@@ -493,17 +494,27 @@ function Invoices() {
     });
 
   const handleDownloadPDF = async (invoice: Invoice) => {
+    if (downloadingInvoices.has(invoice.id)) return;
+    
     try {
+      setDownloadingInvoices(prev => new Set([...prev, invoice.id]));
+      
+      // Show toast for mobile feedback
+      const loadingToast = toast.loading('Preparing PDF...');
+      
       if (!settings) {
-        toast.error('Business settings not loaded');
+        toast.error('Business settings not loaded', { id: loadingToast });
         return;
       }
 
       const pdfBlob = await generateInvoicePDF(invoice, settings);
+      
+      // Create download link
       const url = window.URL.createObjectURL(pdfBlob);
       const link = document.createElement('a');
       link.href = url;
       
+      // Set filename
       const invoiceNumber = invoice.invoice_number.replace(/^.*?(\d+)$/, '$1');
       const clientName = invoice.client?.name || 'Unknown Client';
       const fileName = `Invoice #${invoiceNumber} - ${clientName}.pdf`;
@@ -511,13 +522,23 @@ function Invoices() {
       link.setAttribute('download', fileName);
       document.body.appendChild(link);
       link.click();
+      
+      // Cleanup
       link.remove();
       window.URL.revokeObjectURL(url);
       
-      toast.success('Invoice PDF downloaded successfully');
+      toast.success('PDF downloaded successfully', {
+        id: loadingToast
+      });
     } catch (error) {
       console.error('Error generating PDF:', error);
-      toast.error('Failed to generate PDF. Please try again.');
+      toast.error('Failed to download PDF');
+    } finally {
+      setDownloadingInvoices(prev => {
+        const next = new Set(prev);
+        next.delete(invoice.id);
+        return next;
+      });
     }
   };
 
@@ -741,9 +762,12 @@ function Invoices() {
               onClick: () => handleEdit(invoice)
             },
             {
-              label: 'Download',
-              icon: <Download className="w-4 h-4" />,
-              onClick: () => handleDownloadPDF(invoice)
+              label: downloadingInvoices.has(invoice.id) ? 'Downloading...' : 'Download',
+              icon: downloadingInvoices.has(invoice.id) ? 
+                <Loader2 className="w-4 h-4 animate-spin" /> : 
+                <Download className="w-4 h-4" />,
+              onClick: () => handleDownloadPDF(invoice),
+              disabled: downloadingInvoices.has(invoice.id)
             },
             {
               label: 'Delete',
@@ -787,10 +811,16 @@ function Invoices() {
       </button>
       <button
         onClick={() => handleDownloadPDF(invoice)}
-        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-        title="Download PDF"
+        className={`p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors relative
+          ${downloadingInvoices.has(invoice.id) ? 'cursor-not-allowed opacity-50' : ''}`}
+        title={downloadingInvoices.has(invoice.id) ? "Downloading..." : "Download PDF"}
+        disabled={downloadingInvoices.has(invoice.id)}
       >
-        <Download className="w-4 h-4" />
+        {downloadingInvoices.has(invoice.id) ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Download className="w-4 h-4" />
+        )}
       </button>
       <button
         onClick={() => handleDelete(invoice.id)}
@@ -1105,10 +1135,20 @@ function Invoices() {
                 <div className="flex justify-end gap-3 pt-4 border-t">
                   <button
                     onClick={() => handleDownloadPDF(viewingInvoice)}
-                    className="flex items-center px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                    className="flex items-center px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                    disabled={downloadingInvoices.has(viewingInvoice.id)}
                   >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download PDF
+                    {downloadingInvoices.has(viewingInvoice.id) ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 mr-2" />
+                        Download PDF
+                      </>
+                    )}
                   </button>
                   <button
                     onClick={() => handleOpenEmailModal(viewingInvoice)}
