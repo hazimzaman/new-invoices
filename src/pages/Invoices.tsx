@@ -8,6 +8,8 @@ import type { Settings } from '../types/settings';
 import { toast } from 'react-hot-toast';
 import { sendInvoiceEmail } from '../services/emailService';
 import { ContextMenu } from '../components/ContextMenu';
+import { Link, useNavigate } from 'react-router-dom';
+import { Table } from '../components/Table';
 
 interface Client {
   id: string;
@@ -710,274 +712,170 @@ function Invoices() {
     }
   };
 
+  const handleViewInvoice = (invoice: Invoice) => {
+    setViewingInvoice(invoice);
+    setIsViewModalOpen(true);
+  };
+
+  // Mobile card view for invoices
+  const renderInvoiceCard = (invoice: Invoice) => (
+    <div key={invoice.id} className="bg-white rounded-lg shadow p-4 space-y-3">
+      <div className="flex justify-between items-start">
+        <div 
+          className="flex-1 cursor-pointer"
+          onClick={() => handleViewInvoice(invoice)}
+        >
+          <h3 className="font-medium text-gray-900">#{invoice.invoice_number}</h3>
+          <p className="text-sm text-gray-500">{invoice.client?.name}</p>
+        </div>
+        <ContextMenu
+          options={[
+            {
+              label: 'View',
+              icon: <Eye className="w-4 h-4" />,
+              onClick: () => handleViewInvoice(invoice)
+            },
+            {
+              label: 'Edit',
+              icon: <Edit2 className="w-4 h-4" />,
+              onClick: () => handleEdit(invoice)
+            },
+            {
+              label: 'Download',
+              icon: <Download className="w-4 h-4" />,
+              onClick: () => handleDownloadPDF(invoice)
+            },
+            {
+              label: 'Delete',
+              icon: <Trash2 className="w-4 h-4" />,
+              onClick: () => handleDelete(invoice.id),
+              className: 'text-red-600 hover:bg-red-50'
+            }
+          ]}
+        />
+      </div>
+      
+      <div className="text-sm text-gray-600">
+        <p>{invoice.items?.[0]?.name}</p>
+        <p className="text-xs text-gray-400">{format(new Date(invoice.created_at), 'MMM d, yyyy')}</p>
+      </div>
+      
+      <div className="flex justify-between items-center text-sm">
+        <div className="font-medium text-gray-900">
+          {formatCurrency(invoice.total, invoice.client?.currency)}
+        </div>
+      </div>
+    </div>
+  );
+
+  // Desktop action buttons
+  const renderActionButtons = (invoice: Invoice) => (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => handleViewInvoice(invoice)}
+        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+        title="View invoice"
+      >
+        <Eye className="w-4 h-4" />
+      </button>
+      <button
+        onClick={() => handleEdit(invoice)}
+        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+        title="Edit invoice"
+      >
+        <Edit2 className="w-4 h-4" />
+      </button>
+      <button
+        onClick={() => handleDownloadPDF(invoice)}
+        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+        title="Download PDF"
+      >
+        <Download className="w-4 h-4" />
+      </button>
+      <button
+        onClick={() => handleDelete(invoice.id)}
+        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+        title="Delete invoice"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    </div>
+  );
+
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Invoices</h1>
-        <div className="flex items-center gap-4">
-          {isRefreshing && (
-            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-          )}
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Invoice
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-6 space-y-4">
-        <div className="flex gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input
-              type="text"
-              placeholder="Search invoices..."
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="flex flex-col gap-4">
+        {/* Header section */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <h1 className="text-2xl font-semibold text-gray-900">Invoices</h1>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-none">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Search invoices..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 border rounded-lg w-full"
+              />
+            </div>
+            <button 
+              onClick={() => {
+                setEditingInvoice(null);
+                setItems([{ name: '', description: '', price: '' }]);
+                setIsModalOpen(true);
+              }}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Add Invoice
+            </button>
           </div>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`px-4 py-2 border rounded-lg flex items-center gap-2 ${
-              showFilters ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            Filters
-            {Object.values(filters).some(value => 
-              value !== '' && value !== 'none' && 
-              !(typeof value === 'object' && Object.values(value).every(v => v === ''))
-            ) && (
-              <span className="w-2 h-2 rounded-full bg-blue-600" />
-            )}
-          </button>
         </div>
 
-        {showFilters && (
-          <div className="bg-white rounded-lg shadow p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Client
-                </label>
-                <select
-                  value={filters.client}
-                  onChange={(e) => setFilters({ ...filters, client: e.target.value })}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-                  <option value="">All Clients</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name} - {client.company_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {/* Content section */}
+        {isLoading ? (
+          <div className="flex justify-center items-center py-8">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          </div>
+        ) : filteredInvoices.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            No invoices found
+          </div>
+        ) : (
+          <>
+            {/* Mobile View - Cards */}
+            <div className="grid grid-cols-1 gap-4 md:hidden">
+              {filteredInvoices.map(invoice => renderInvoiceCard(invoice))}
+            </div>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Date Range
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    value={filters.dateRange.from}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      dateRange: { ...filters.dateRange, from: e.target.value }
-                    })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                  <input
-                    type="date"
-                    value={filters.dateRange.to}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      dateRange: { ...filters.dateRange, to: e.target.value }
-                    })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Amount Range
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    placeholder="Min"
-                    value={filters.minAmount}
-                    onChange={(e) => setFilters({ ...filters, minAmount: e.target.value })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Max"
-                    value={filters.maxAmount}
-                    onChange={(e) => setFilters({ ...filters, maxAmount: e.target.value })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Sort By
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    value={filters.sortBy}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      sortBy: e.target.value as FilterState['sortBy']
-                    })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  >
-                    <option value="none">No Sorting</option>
-                    <option value="date">Date</option>
-                    <option value="amount">Amount</option>
-                    <option value="client">Client Name</option>
-                    <option value="number">Invoice Number</option>
-                  </select>
-                  <select
-                    value={filters.sortOrder}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      sortOrder: e.target.value as 'asc' | 'desc'
-                    })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  >
-                    <option value="desc">Descending</option>
-                    <option value="asc">Ascending</option>
-                  </select>
+            {/* Desktop View - Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <div className="inline-block min-w-full align-middle">
+                <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
+                  <Table headers={["INVOICE #", "CLIENT", "ITEM", "DATE", "AMOUNT", "ACTIONS"]}>
+                    {filteredInvoices.map(invoice => (
+                      <tr key={invoice.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-900">{invoice.invoice_number}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{invoice.client?.name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{invoice.items?.[0]?.name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {format(new Date(invoice.created_at), 'MMM d, yyyy')}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                          {formatCurrency(invoice.total, invoice.client?.currency)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {renderActionButtons(invoice)}
+                        </td>
+                      </tr>
+                    ))}
+                  </Table>
                 </div>
               </div>
             </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={resetFilters}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Reset Filters
-              </button>
-            </div>
-          </div>
+          </>
         )}
-      </div>
-
-      {/* Add Bulk Actions */}
-      {selectionMode && selectedInvoices.length > 0 && (
-        <div className="mb-4 p-2 bg-gray-50 rounded-lg flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            {selectedInvoices.length} invoice(s) selected
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleBulkDownload}
-              className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
-            >
-              <Download className="w-4 h-4" />
-              Download
-            </button>
-            <button
-              onClick={handleBulkDelete}
-              className="px-3 py-1 text-sm text-red-600 hover:text-red-800 flex items-center gap-1"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-white rounded-lg shadow">
-        <table className="min-w-full">
-          <thead>
-            <tr className="border-b border-gray-200">
-              {selectionMode && (
-                <th scope="col" className="w-10 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedInvoices.length === filteredInvoices.length}
-                    onChange={handleSelectAll}
-                    className="rounded border-gray-300 can-select"
-                  />
-                </th>
-              )}
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice #</th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-              <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-              <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {filteredInvoices.map((invoice) => (
-              <tr key={invoice.id} className="hover:bg-gray-50">
-                {selectionMode && (
-                  <td className="w-10 px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedInvoices.includes(invoice.id)}
-                      onChange={() => handleSelectInvoice(invoice.id)}
-                      className="rounded border-gray-300 can-select"
-                    />
-                  </td>
-                )}
-                <td className="px-4 py-3 text-sm text-gray-900">{invoice.invoice_number}</td>
-                <td className="px-4 py-3 text-sm text-gray-900">{invoice.client?.name}</td>
-                <td className="px-4 py-3 text-sm text-gray-500">{invoice.items?.[0]?.name}</td>
-                <td className="px-4 py-3 text-sm text-gray-500">{format(new Date(invoice.created_at), 'MMM d, yyyy')}</td>
-                <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(invoice.total, invoice.client?.currency)}</td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end space-x-2">
-                    <button
-                      onClick={() => {
-                        setViewingInvoice(invoice);
-                        setIsViewModalOpen(true);
-                      }}
-                      className="text-gray-600 hover:text-gray-900"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleEdit(invoice)}
-                      className="text-blue-600 hover:text-blue-900"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDownloadPDF(invoice)}
-                      className="text-gray-600 hover:text-gray-900"
-                    >
-                      <Download className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleOpenEmailModal(invoice)}
-                      className="text-gray-600 hover:text-gray-900"
-                    >
-                      <Mail className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(invoice.id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
 
       {/* Create/Edit Invoice Modal */}
@@ -1131,107 +1029,105 @@ function Invoices() {
       {/* View Invoice Modal */}
       {isViewModalOpen && viewingInvoice && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-4xl">
-            <div className="flex justify-between items-start mb-6">
-              <h2 className="text-xl font-bold">Invoice Details</h2>
-              <button
-                onClick={() => {
-                  setIsViewModalOpen(false);
-                  setViewingInvoice(null);
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Invoice Number</label>
-                  <p className="mt-1 text-gray-900">{viewingInvoice.invoice_number}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Date</label>
-                  <p className="mt-1 text-gray-900">
-                    {format(new Date(viewingInvoice.created_at), 'MMM d, yyyy')}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Client</label>
-                  <p className="mt-1 text-gray-900">
-                    {viewingInvoice.client?.name}
-                    {viewingInvoice.client?.company_name && (
-                      <span className="text-gray-500 text-sm block">
-                        {viewingInvoice.client.company_name}
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Total Amount</label>
-                  <p className="mt-1 text-gray-900">
-                    {formatCurrency(viewingInvoice.total, viewingInvoice.client?.currency)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Invoice Items */}
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-2">Items</label>
-                <div className="border rounded-lg overflow-hidden">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {viewingInvoice.items && viewingInvoice.items.length > 0 ? (
-                        viewingInvoice.items.map((item, index) => (
-                          <tr key={item.id || index}>
-                            <td className="px-4 py-2 text-sm text-gray-900">{item.name}</td>
-                            <td className="px-4 py-2 text-sm text-gray-500">{item.description}</td>
-                            <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                              {formatCurrency(item.price, viewingInvoice.client?.currency)}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={3} className="px-4 py-2 text-sm text-gray-500 text-center">
-                            No items found
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex justify-end gap-3 mt-6">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto m-4">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-6">
+                <h2 className="text-xl font-bold text-gray-900">
+                  Invoice #{viewingInvoice.invoice_number}
+                </h2>
                 <button
                   onClick={() => {
                     setIsViewModalOpen(false);
                     setViewingInvoice(null);
                   }}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  className="text-gray-500 hover:text-gray-700"
                 >
-                  Close
+                  <X className="w-5 h-5" />
                 </button>
-                <button
-                  onClick={() => {
-                    setEditingInvoice(viewingInvoice);
-                    setIsViewModalOpen(false);
-                    setIsModalOpen(true);
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Edit Invoice
-                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Client Information */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Client Details</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Name</p>
+                      <p className="text-gray-900">{viewingInvoice.client?.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Company</p>
+                      <p className="text-gray-900">{viewingInvoice.client?.company_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Email</p>
+                      <p className="text-gray-900">{viewingInvoice.client?.email}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invoice Items */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Items</h3>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {viewingInvoice.items.map((item, index) => (
+                          <tr key={item.id || index}>
+                            <td className="px-4 py-3 text-sm text-gray-900">{item.name}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{item.description}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                              {formatCurrency(item.price, viewingInvoice.client?.currency)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50">
+                        <tr>
+                          <td colSpan={2} className="px-4 py-3 text-sm font-medium text-gray-900 text-right">Total</td>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
+                            {formatCurrency(viewingInvoice.total, viewingInvoice.client?.currency)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-3 pt-4 border-t">
+                  <button
+                    onClick={() => handleDownloadPDF(viewingInvoice)}
+                    className="flex items-center px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download PDF
+                  </button>
+                  <button
+                    onClick={() => handleOpenEmailModal(viewingInvoice)}
+                    className="flex items-center px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    <Mail className="w-4 h-4 mr-2" />
+                    Send Email
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsViewModalOpen(false);
+                      handleEdit(viewingInvoice);
+                    }}
+                    className="flex items-center px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                  >
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    Edit Invoice
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -21,22 +21,30 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ options }) => {
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isOpen]);
 
   return (
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="p-1 rounded-full hover:bg-gray-100"
+        className="p-2 rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors"
+        aria-label="More options"
       >
         <MoreVertical className="w-4 h-4" />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
-          <div className="py-1">
+        <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
+          <div className="py-1" role="menu">
             {options.map((option, index) => (
               <button
                 key={index}
@@ -44,10 +52,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ options }) => {
                   option.onClick();
                   setIsOpen(false);
                 }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-gray-100 ${option.className || ''}`}
+                className={`
+                  w-full text-left px-4 py-2 text-sm flex items-center gap-2 
+                  hover:bg-gray-100 active:bg-gray-200 transition-colors
+                  ${option.className || ''}
+                `}
+                role="menuitem"
               >
                 {option.icon}
-                {option.label}
+                <span className="truncate">{option.label}</span>
               </button>
             ))}
           </div>
