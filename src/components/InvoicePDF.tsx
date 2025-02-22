@@ -2,6 +2,7 @@ import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image, Font } from '@react-pdf/renderer';
 import type { InvoiceWithClient } from '../types/invoice';
 import type { Settings } from '../types/settings';
+import { format } from 'date-fns';
 
 import logo from './primo-logo.png';
 import bgImage from './Frame-7.png';
@@ -114,8 +115,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 20,
-    gap: 10,
-    width:  'auto'
+    width: '100%',
   },
   leftDetails: {
     flex: 1,
@@ -123,6 +123,19 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     rowGap: 2,
     transform: 'translateY(-50px)',
+  },
+  rightDetails: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    transform: 'translateY(-30px)',
+    paddingTop: 35,
+  },
+  dateContainer: {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   detailRow: {
     display: 'flex',
@@ -132,10 +145,9 @@ const styles = StyleSheet.create({
     columnGap: 10
   },
   detailLabel: {
+    width: 80,
     fontWeight: 'bold',
-    marginRight: 10,
-    minWidth: 70,
-    display: 'inline-block',
+    marginRight: 8,
   },
   billTo: {
     display: 'flex',
@@ -220,6 +232,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 4,
   },
+  footerText: {
+    fontSize: 9,
+    color: '#666',
+    textAlign: 'center',
+  },
 });
 
 const calculateTotal = (items: any[]) => {
@@ -267,7 +284,7 @@ export const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, settings }) => 
                 <Text style={styles.detailLabel}>Bill to:</Text>
                 <View style={styles.billTo}>
                   <Text style={styles.clientCompanyName}>{invoice?.client?.company_name}</Text>
-                <Text>{invoice?.client?.name}</Text>
+                  <Text>{invoice?.client?.name}</Text>
                 </View>
               </View>
               <View style={styles.detailRow}>
@@ -280,6 +297,13 @@ export const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, settings }) => 
                   <Text>{invoice?.client?.tax_number}</Text>
                 </View>
               )}
+            </View>
+
+            <View style={styles.rightDetails}>
+              <View style={styles.dateContainer}>
+                <Text style={styles.detailLabel}>Date:</Text>
+                <Text>{format(new Date(invoice?.created_at), 'MMMM dd, yyyy')}</Text>
+              </View>
             </View>
           </View>
 
