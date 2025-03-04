@@ -1,6 +1,12 @@
 import { supabase } from '../lib/supabase';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import { Invoice } from '../types/invoice';
+
+// Add type for jsPDF with autoTable
+interface jsPDFWithAutoTable extends jsPDF {
+  autoTable: (options: any) => void;
+}
 
 export const generateInvoicePDF = async (invoice: Invoice) => {
   try {
@@ -61,7 +67,7 @@ export const generateInvoicePDF = async (invoice: Invoice) => {
     }
 
     // Create new PDF document
-    const doc = new jsPDF();
+    const doc = new jsPDF() as jsPDFWithAutoTable;
     
     // Add business details
     doc.setFontSize(20);
