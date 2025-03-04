@@ -26,6 +26,9 @@ interface BusinessSettings {
   logo_url: string | null;
   invoice_number: number | null;
   email_content: string | null;
+  smtp_host: string | null;
+  smtp_port: number | null;
+  smtp_password: string | null;
 }
 
 function Settings() {
@@ -53,6 +56,9 @@ function Settings() {
     logo_url: null,
     invoice_number: null,
     email_content: null,
+    smtp_host: null,
+    smtp_port: null,
+    smtp_password: null,
   });
 
   useEffect(() => {
@@ -612,6 +618,59 @@ function Settings() {
               <p className="mt-1 text-sm text-gray-500">
                 This content will be pre-filled when sending invoices via email.
               </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  SMTP Host
+                </label>
+                <input
+                  type="text"
+                  value={settings.smtp_host || ''}
+                  onChange={(e) => setSettings(prev => ({
+                    ...prev,
+                    smtp_host: e.target.value
+                  }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="smtp.gmail.com"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  SMTP Port
+                </label>
+                <input
+                  type="number"
+                  value={settings.smtp_port || ''}
+                  onChange={(e) => setSettings(prev => ({
+                    ...prev,
+                    smtp_port: parseInt(e.target.value)
+                  }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="465"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Password
+                </label>
+                <input
+                  type="password"
+                  value={settings.smtp_password || ''}
+                  onChange={(e) => setSettings(prev => ({
+                    ...prev,
+                    smtp_password: e.target.value
+                  }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="Your email password or app password"
+                />
+                <p className="mt-1 text-sm text-gray-500">
+                  For Gmail, use an App Password. <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">Learn more</a>
+                </p>
+              </div>
             </div>
           </div>
         </div>

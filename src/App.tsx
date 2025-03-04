@@ -10,8 +10,9 @@ import { supabase } from './lib/supabase';
 import InvoicePreview from './pages/InvoicePreview';
 import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout';
+import { ErrorBoundary } from 'react-error-boundary';
 
-function LoadingScreen({ message, showAuthLink = false }: { message: string, showAuthLink?: boolean }) {
+function LoadingScreen({ message, showAuthLink = false }) {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
@@ -30,34 +31,26 @@ function LoadingScreen({ message, showAuthLink = false }: { message: string, sho
   );
 }
 
+function ErrorFallback({error}: {error: Error}) {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <h2 className="text-xl font-bold text-red-600">Something went wrong:</h2>
+        <pre className="mt-2 text-sm text-gray-500">{error.message}</pre>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const { loading, user } = useAuth();
-
-  useEffect(() => {
-    // Check current auth state
-    const checkAuth = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      console.log('Current session:', session, 'Error:', error);
-    };
-
-    checkAuth();
-
-    // Subscribe to auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event, session);
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
 
   if (loading) {
     return <LoadingScreen message="Initializing app..." showAuthLink />;
   }
 
   return (
-    <>
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
       <Toaster position="top-right" />
       <Router>
         <Routes>
@@ -79,7 +72,7 @@ function App() {
           />
         </Routes>
       </Router>
-    </>
+    </ErrorBoundary>
   );
 }
 

@@ -1,17 +1,20 @@
 export interface Invoice {
   id: string;
   invoice_number: string;
-  date: string;
-  created_at: string;
-  total_amount: number;
   client_id: string;
+  client?: {
+    name: string;
+    email: string;
+    address?: string;
+    currency?: string;
+  };
   items: Array<{
     name: string;
     description: string;
     price: number;
-    currency: string;
-    quantity?: number;
   }>;
+  total: number;
+  created_at: string;
 }
 
 export interface Client {

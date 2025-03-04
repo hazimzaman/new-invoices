@@ -52,3 +52,13 @@ CREATE POLICY "Users can delete their own clients"
   ON clients FOR DELETE
   TO authenticated
   USING (auth.uid() = user_id);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  invoice_number text NOT NULL,
+  client_id uuid REFERENCES clients(id),
+  total decimal NOT NULL DEFAULT 0,
+  items jsonb[] NOT NULL DEFAULT '{}',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);

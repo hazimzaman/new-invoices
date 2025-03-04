@@ -1,5 +1,10 @@
+import emailjs from '@emailjs/browser';
+
 interface EmailData {
+  from: string;
   to: string;
+  cc?: string;
+  bcc?: string;
   invoiceNumber: string;
   clientName: string;
   amount: number;
@@ -7,7 +12,11 @@ interface EmailData {
   items: any[];
   customMessage?: string;
   pdfBlob: Blob;
+  businessName?: string;
 }
+
+// Add a constant for the email server URL
+const EMAIL_SERVER_URL = 'http://localhost:3001';
 
 export const sendInvoiceEmail = async (emailData: EmailData) => {
   try {
@@ -22,58 +31,58 @@ export const sendInvoiceEmail = async (emailData: EmailData) => {
     reader.readAsDataURL(emailData.pdfBlob);
     const base64PDF = await base64Promise;
 
-    // Format currency the same way as in Invoices.tsx
-    const formatCurrency = (amount: number, currency: string = '$') => {
-      const currencySymbol = currency || '$';
-      const formattedAmount = amount.toFixed(2);
-      return `${currencySymbol}${formattedAmount}`;
-    };
-
-    // Format amounts
-    const formattedTotal = formatCurrency(emailData.amount, emailData.currency);
-    
     // Create items table in plain text
     const itemsTable = emailData.items.map(item => 
-      `${item.name}: ${formatCurrency(item.price, emailData.currency)}`
+      `${item.name}: ${emailData.currency}${item.price.toFixed(2)}`
     ).join('\n');
 
     const defaultMessage = `Dear ${emailData.clientName},
 
-Please find attached invoice #${emailData.invoiceNumber} for ${formattedTotal}.
+Thank you for your business. Please find attached invoice #${emailData.invoiceNumber} for ${emailData.currency}${emailData.amount.toFixed(2)}.
 
-Invoice Items:
+Invoice Details:
 ${itemsTable}
 
-Best regards,
-Your Company`;
+Payment is due within 30 days.
 
-    const response = await fetch('http://localhost:3001/send-email', {
+If you have any questions, please don't hesitate to contact us.
+
+Best regards,
+${emailData.businessName}
+
+Note: This is an automated email sent from our invoice system.`;
+
+    const response = await fetch(`${EMAIL_SERVER_URL}/send-email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        from: emailData.from,
         to: emailData.to,
-        subject: `Invoice #${emailData.invoiceNumber} from Your Company`,
+        cc: emailData.cc,
+        bcc: emailData.bcc,
+        subject: `Invoice #${emailData.invoiceNumber} from ${emailData.businessName}`,
         text: emailData.customMessage || defaultMessage,
         attachments: [{
           filename: `Invoice_${emailData.invoiceNumber}.pdf`,
           content: base64PDF,
           encoding: 'base64'
-        }]
+        }],
+        businessName: emailData.businessName
       }),
     });
 
-    const data = await response.json();
-    
+    // Add better error handling
     if (!response.ok) {
-      console.error('Server error response:', data);
-      throw new Error(data.message || 'Failed to send email');
+      const errorData = await response.json();
+      console.error('Email server error:', errorData);
+      throw new Error(errorData.message || 'Failed to send email');
     }
 
-    return data;
+    return await response.json();
   } catch (error) {
-    console.error('Detailed error in sendInvoiceEmail:', error);
+    console.error('Error in sendInvoiceEmail:', error);
     throw error;
   }
 }; 

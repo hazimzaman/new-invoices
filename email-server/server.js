@@ -19,7 +19,7 @@ const app = express();
 app.use(cors());
 
 // These middleware declarations are important!
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));  // Increased limit for PDF attachments
 app.use(express.urlencoded({ extended: true }));
 // This line is crucial for serving the index.html
 app.use(express.static('public'));
@@ -36,90 +36,55 @@ app.get('/test', (req, res) => {
 
 // Configure nodemailer
 const transporter = nodemailer.createTransport({
-    host: 'smtp.zoho.com',
-    port: 465,
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
     secure: true,
     auth: {
-        user: process.env.ZOHO_USER,
-        pass: process.env.ZOHO_PASS
-    },
-    debug: true
-});
-
-// Verify the connection configuration
-transporter.verify(function(error, success) {
-    if (error) {
-        console.error('SMTP connection error:', error);
-    } else {
-        console.log('Server is ready to take our messages');
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
     }
 });
 
-// API endpoint for sending email
+// Test SMTP connection
+transporter.verify((error, success) => {
+    if (error) {
+        console.error('SMTP Error:', error);
+    } else {
+        console.log('Server is ready to send emails');
+    }
+});
+
+// Email sending endpoint
 app.post('/send-email', async (req, res) => {
-    const { to, subject, text, attachments } = req.body;
-    
     try {
-        // Log the incoming request data (without sensitive info)
-        console.log('Received email request:', {
-            to,
-            subject,
-            hasAttachments: !!attachments,
-            attachmentsLength: attachments?.length
-        });
-
-        // Verify we have the required environment variables
-        if (!process.env.ZOHO_USER || !process.env.ZOHO_PASS) {
-            throw new Error('Missing ZOHO credentials in environment variables');
-        }
-
-        // Log the email attempt
-        console.log('Attempting to send email with config:', {
-            from: process.env.ZOHO_USER,
-            to,
-            subject,
-            hasAttachments: !!attachments
-        });
+        const { from, to, cc, bcc, subject, text, attachments, businessName } = req.body;
         
+        console.log('Sending email:', { to, subject, hasAttachment: !!attachments });
+
         const mailOptions = {
-            from: process.env.ZOHO_USER,
+            from: `${businessName} <${process.env.SMTP_USER}>`,
             to,
+            cc,
+            bcc,
             subject,
             text,
-            attachments
+            attachments,
+            replyTo: from
         };
 
-        console.log('Mail options prepared:', {
-            ...mailOptions,
-            text: text?.substring(0, 50) + '...' // Log just the start of the text
-        });
-
         await transporter.sendMail(mailOptions);
-        
-        console.log('Email sent successfully to:', to);
         res.json({ success: true, message: 'Email sent successfully!' });
     } catch (error) {
-        console.error('Detailed error:', error);
-        console.error('Error stack:', error.stack);
-        
-        // Send a more specific error message to the client
-        let errorMessage = 'Failed to send email';
-        if (error.code === 'EAUTH') {
-            errorMessage = 'Authentication failed - check email credentials';
-        } else if (error.code === 'ESOCKET') {
-            errorMessage = 'Network error - check your connection';
-        }
-        
+        console.error('Email sending error:', error);
         res.status(500).json({ 
             success: false, 
-            message: errorMessage,
-            error: error.message,
-            stack: error.stack
+            message: 'Failed to send email',
+            error: error.message 
         });
     }
 });
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Email server running on port ${PORT}`);
 }); 

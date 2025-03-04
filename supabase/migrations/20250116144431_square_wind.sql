@@ -75,3 +75,14 @@ CREATE TRIGGER update_business_settings_updated_at
   BEFORE UPDATE ON business_settings
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- Create clients table
+CREATE TABLE IF NOT EXISTS clients (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name text NOT NULL,
+  email text,
+  address text,
+  currency text DEFAULT '$',
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
