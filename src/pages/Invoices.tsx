@@ -1004,7 +1004,7 @@ function Invoices() {
             <div className="hidden md:block overflow-x-auto">
               <div className="inline-block min-w-full align-middle">
                 <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
-                  <Table headers={["INVOICE #", "CLIENT", "ITEM", "DATE", "AMOUNT", "ACTIONS"]}>
+                  <Table headers={["INVOICE #", "CLIENT", "ITEM", "DATE", "dasdas", "ACTIONS"]}>
                     {filteredInvoices.map(invoice => (
                       <tr key={invoice.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm text-gray-900">{invoice.invoice_number}</td>
