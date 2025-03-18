@@ -86,5 +86,5 @@ app.post('/send-email', async (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-    console.log(`Email server running on port ${PORT}`);
+    console.log(`Email server running on port ${PORT}, ${process.env.SMTP_HOST},`);
 }); 
