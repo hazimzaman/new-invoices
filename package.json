@@ -2,14 +2,14 @@
   "name": "client-invoice-management",
   "private": true,
   "version": "0.0.0",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "server": "cd email-server && nodemon server.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "node server.js"
+    "start": "npm run dev"
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",
