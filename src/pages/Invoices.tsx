@@ -657,7 +657,7 @@ function Invoices() {
         .from('invoices')
         .select(`
           *,
-          client:clients(
+          client:clients!client_id(
             id,
             name,
             email,

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const app = express();
-const morgan = require('morgan');
+// const morgan = require('morgan');
 
 // Increase the limit for JSON and URL-encoded payloads
 app.use(express.json({ limit: '100mb' }));
@@ -20,7 +20,6 @@ app.use((req, res, next) => {
 });
 
 // Add this near the top of your file
-app.use(morgan('dev')); // Logs incoming requests
 
 // Add the send-email endpoint
 app.post('/send-email', async (req, res) => {
