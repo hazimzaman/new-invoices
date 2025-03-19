@@ -16,7 +16,7 @@ interface EmailData {
 }
 
 // Add a constant for the email server URL
-const EMAIL_SERVER_URL = 'http://localhost:3001';
+const EMAIL_SERVER_URL = 'https://invoice-server-78f366e0a896.herokuapp.com';
 
 export const sendInvoiceEmail = async (emailData: EmailData) => {
   try {
