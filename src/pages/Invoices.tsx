@@ -661,6 +661,7 @@ function Invoices() {
             id,
             name,
             email,
+            client_address,
             currency
           )
         `)
