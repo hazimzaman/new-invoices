@@ -661,7 +661,6 @@ function Invoices() {
             id,
             name,
             email,
-            address,
             currency
           )
         `)
