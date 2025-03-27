@@ -12,7 +12,7 @@ import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout';
 import { ErrorBoundary } from 'react-error-boundary';
 
-function LoadingScreen({ message: string, showAuthLink = false }) {
+function LoadingScreen({ message, showAuthLink = false }) {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">

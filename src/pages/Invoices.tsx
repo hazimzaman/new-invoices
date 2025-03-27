@@ -657,7 +657,7 @@ function Invoices() {
         .from('invoices')
         .select(`
           *,
-          client:clients!client_id(
+          client:clients(
             id,
             name,
             email,
@@ -701,7 +701,7 @@ function Invoices() {
         currency: completeInvoice.client?.currency || '$',
         items: completeInvoice.items,
         customMessage: emailForm.content,
-        pdfBlob,
+        // pdfBlob,
         businessName: settings.business_name
       });
 

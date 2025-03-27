@@ -11,7 +11,7 @@ interface EmailData {
   currency: string;
   items: any[];
   customMessage?: string;
-  pdfBlob: Blob;
+  // pdfBlob: Blob;
   businessName?: string;
 }
 
